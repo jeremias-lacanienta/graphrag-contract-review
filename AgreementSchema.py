@@ -16,11 +16,11 @@ class GoverningLaw(TypedDict):
     most_favored_country: str
 
 class ContractClause(TypedDict):
-    clause_type: str
+    type: str
     excerpts: List[str]
 
 class Agreement(TypedDict):  
-    agreement_name: str
+    name: str
     agreement_type: str
     effective_date: str
     expiration_date: str

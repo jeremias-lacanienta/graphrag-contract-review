@@ -1,17 +1,17 @@
 {
     "agreement": {
         "agreement_name": "Marketing Affiliate Agreement",
-        "agreement_type": "Affiliate Agreement",
+        "agreement_type": "Marketing Affiliate Agreement",
         "effective_date": "2014-05-08",
         "expiration_date": "2014-12-31",
-        "renewal_term": "1 year",
+        "renewal_term": "Automatically renewed for successive one (1) year periods",
         "Notice_period_to_Terminate_Renewal": "30 days",
         "parties": [
             {
                 "role": "Company",
                 "name": "Birch First Global Investments Inc.",
-                "incorporation_country": "United States",
-                "incorporation_state": "U.S. Virgin Islands"
+                "incorporation_country": "United States Virgin Islands",
+                "incorporation_state": "N/A"
             },
             {
                 "role": "Marketing Affiliate",
@@ -127,7 +127,7 @@
                 "clause_type": "Non-Transferable License",
                 "exists": true,
                 "excerpts": [
-                    "MA and its Clients receive no title to the Technology contained on the Technology."
+                    "MA acknowledges that MA and its Clients receive no title to the Technology contained on the Technology."
                 ]
             },
             {
@@ -152,15 +152,15 @@
             },
             {
                 "clause_type": "Source Code Escrow",
-                "exists": true,
-                "excerpts": [
-                    "MA agrees that it shall not, by itself or in association with any other party, reproduce, duplicate, copy, decompile, disassemble or reverse engineer the Technology in source form"
-                ]
+                "exists": false,
+                "excerpts": []
             },
             {
                 "clause_type": "Post-Termination Services",
-                "exists": false,
-                "excerpts": []
+                "exists": true,
+                "excerpts": [
+                    "Except as otherwise permitted in writing by Company, MA shall immediately cease selling Annual Technology Maintenance and providing application and technical support for the Technology to Clients"
+                ]
             },
             {
                 "clause_type": "Audit Rights",
@@ -188,7 +188,7 @@
                 "clause_type": "Warranty Duration",
                 "exists": true,
                 "excerpts": [
-                    "any claim for breach of warranty under subparagraph (A) hereof must be made in writing within (90) days from date of shipment."
+                    "ANY CLAIM FOR BREACH OF WARRANTY UNDER SUBPARAGRAPH (A) HEREOF MUST BE MADE IN WRITING WITHIN (90) DAYS FROM DATE OF SHIPMENT."
                 ]
             },
             {

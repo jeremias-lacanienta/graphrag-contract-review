@@ -11,7 +11,7 @@ WITH data.agreement as a
 // todo proper global id for the agreement, perhaps from filename
 MERGE (agreement:Agreement {contract_id: a.contract_id})
 ON CREATE SET 
-  agreement.name = a.agreement_name,
+  agreement.name = a.name,
   agreement.effective_date = a.effective_date,
   agreement.expiration_date = a.expiration_date,
   agreement.agreement_type = a.agreement_type,
@@ -37,15 +37,15 @@ FOREACH (party IN a.parties |
 
 WITH a, agreement, [clause IN a.clauses WHERE clause.exists = true] AS valid_clauses
 FOREACH (clause IN valid_clauses |
-  CREATE (cl:ContractClause {type: clause.clause_type})
+  CREATE (cl:ContractClause {type: clause.type})
   MERGE (agreement)-[clt:HAS_CLAUSE]->(cl)
-  SET clt.type = clause.clause_type
+  SET clt.type = clause.type
   // ON CREATE SET c.excerpts = clause.excerpts
   FOREACH (excerpt IN clause.excerpts |
     MERGE (cl)-[:HAS_EXCERPT]->(e:Excerpt {text: excerpt})
   )
   //link clauses to a Clause Type label
-  MERGE (clType:ClauseType{name: clause.clause_type})
+  MERGE (clType:ClauseType{name: clause.type})
   MERGE (cl)-[:HAS_TYPE]->(clType)
 )"""
 
@@ -95,20 +95,74 @@ NEO4J_PASSWORD=os.getenv('NEO4J_PASSWORD')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 JSON_CONTRACT_FOLDER = './data/output/'
 
+# Function to get the highest existing contract_id
+def get_max_contract_id(driver):
+    query = """
+    MATCH (a:Agreement)
+    RETURN COALESCE(MAX(a.contract_id), 0) as max_id
+    """
+    result = driver.execute_query(query)
+    return result.records[0].get("max_id") if result.records else 0
+
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
-
+# Get the next available contract_id
+next_contract_id = get_max_contract_id(driver) + 1
+print(f"Starting with contract_id: {next_contract_id}")
 
 json_contracts = [filename for filename in os.listdir(JSON_CONTRACT_FOLDER) if filename.endswith('.json')]
-contract_id = 1
 for json_contract in json_contracts:
+  # Extract the original PDF filename (remove the .json extension)
+  pdf_name = json_contract.replace('.json', '')
+  
+  # Check if a contract with this filename already exists
+  check_existing_query = """
+  MATCH (a:Agreement {filename: $filename})
+  RETURN a.contract_id as contract_id
+  """
+  result = driver.execute_query(check_existing_query, {"filename": pdf_name})
+  
+  contract_id = None
+  if result.records:
+    # Use the existing contract_id if it exists
+    contract_id = result.records[0].get("contract_id")
+    print(f"Updating existing contract for {pdf_name} with ID {contract_id}")
+    
+    # Delete existing clauses and relationships for this contract
+    # This keeps the Agreement node but removes related data to be replaced
+    cleanup_query = """
+    MATCH (a:Agreement {filename: $filename})-[r:HAS_CLAUSE]->(cc:ContractClause)
+    WITH a, r, cc
+    OPTIONAL MATCH (cc)-[r2]->(n)
+    DETACH DELETE r2, cc
+    """
+    driver.execute_query(cleanup_query, {"filename": pdf_name})
+  else:
+    # Use the next available contract_id
+    contract_id = next_contract_id
+    next_contract_id += 1
+    print(f"Creating new contract for {pdf_name} with ID {contract_id}")
+  
   with open(JSON_CONTRACT_FOLDER + json_contract,'r') as file:
     json_string = file.read()
     json_data = json.loads(json_string)
     agreement = json_data['agreement']
     agreement['contract_id'] = contract_id
-    driver.execute_query(CREATE_GRAPH_STATEMENT,  data=json_data)
-    contract_id+=1
+    agreement['filename'] = pdf_name  # Store the filename to identify this contract
+    
+    # Convert clause_type to type in all clauses for consistency
+    if 'clauses' in agreement:
+      for clause in agreement['clauses']:
+        if 'clause_type' in clause:
+          clause['type'] = clause['clause_type']
+    
+    # Convert agreement_name to name for consistency
+    if 'agreement_name' in agreement and 'name' not in agreement:
+      agreement['name'] = agreement['agreement_name']
+    
+    driver.execute_query(CREATE_GRAPH_STATEMENT, data=json_data)
+    print(f"Processed {json_contract}")
+  
     
 
 create_full_text_indices(driver)

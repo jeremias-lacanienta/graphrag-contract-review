@@ -1,0 +1,36 @@
+{# templates/contracts_list.jinja2 #}
+{% extends "base.jinja2" %}
+
+{% block header %}
+Contract List
+{% endblock %}
+
+{% block content %}
+{% if contracts %}
+Found {{ contracts|length }} contract(s):
+
+{% for contract in contracts %}
+[{{ loop.index }}] Contract ID: {{ contract.contract_id }}
+    Name: {{ contract.name|default('Unnamed Contract') }}
+    {% if contract.parties %}
+    Parties:
+    {% for party in contract.parties %}
+      - {{ party.name|default('Unknown Organization') }} ({{ party.role|default('Unknown Role') }}{% if party.incorporation_state %}, {{ party.incorporation_state }}{% endif %})
+    {% endfor %}
+    {% endif %}
+
+    {% if contract.clauses %}
+    Clauses:
+    {% for clause in contract.clauses %}
+      - {{ clause.type|default('Unknown Clause Type') }}
+    {% endfor %}
+    {% endif %}
+    
+    {% if not loop.last %}
+    ----------------
+    {% endif %}
+{% endfor %}
+{% else %}
+No contracts found.
+{% endif %}
+{% endblock %}
