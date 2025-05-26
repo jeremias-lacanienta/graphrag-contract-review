@@ -74,7 +74,7 @@ def render_similar_text_results(results: List[Dict[str, Any]]) -> str:
     contracts_by_id = {}
     for item in results:
         contract_id = item.get('contract_id')
-        agreement_name = item.get('name', item.get('agreement_name', 'Unnamed Contract'))
+        agreement_name = item.get('name', 'Unnamed Contract')
         
         if contract_id not in contracts_by_id:
             contracts_by_id[contract_id] = {
@@ -122,10 +122,6 @@ def render_excerpts(contract: Dict[str, Any], excerpts: List[Dict[str, Any]]) ->
     Returns:
         Formatted string representation of the excerpts
     """
-    # Ensure contract has 'name' property
-    if 'name' not in contract and 'agreement_name' in contract:
-        contract['name'] = contract['agreement_name']
-    
     template = env.get_template("excerpts.jinja2")
     return template.render(contract=contract, excerpts=excerpts, title="Contract Excerpts")
 
@@ -177,7 +173,7 @@ def format_result(result: Any, command: str = None, args: List[str] = None) -> s
         elif command in ["get_contracts_by_party", "get_contracts_with_clause_type", "get_contracts_without_clause"] and isinstance(result, list):
             return render_contracts_list(result)
         
-        elif command == "get_contracts_similar_text" and isinstance(result, list):
+        elif command in ["get_contracts_similar_text", "search"] and isinstance(result, list):
             return render_similar_text_results(result)
         
         elif command == "get_contract_excerpts" and isinstance(result, dict) and 'contract' in result and 'excerpts' in result:
