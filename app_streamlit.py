@@ -253,17 +253,9 @@ st.sidebar.markdown(f"### {selected_cmd['name']}")
 st.sidebar.markdown(f"{selected_cmd['description']}")
 st.sidebar.markdown(f"**Input format**: {selected_cmd['args_description']}")
 
-# Create a more reliable copy-to-input mechanism
+# Display example for the selected command
 st.sidebar.markdown("**Example**:")
-example_container = st.sidebar.container()
-col1, col2 = example_container.columns([4, 1])
-col1.code(selected_cmd['example'], language=None)
-if col2.button("Copy", key="copy_example"):
-    # Set the default input value (will be used next time the chat input is rendered)
-    st.session_state.default_input = selected_cmd['example']
-    # Provide feedback to the user
-    st.sidebar.success("Example copied! It will be inserted in the input field.")
-    st.rerun()
+st.sidebar.code(selected_cmd['example'], language=None)
 
 # Chat-like input interface
 for message in st.session_state.messages:
@@ -271,9 +263,6 @@ for message in st.session_state.messages:
         st.chat_message("user").write(message["content"])
     else:
         st.chat_message("assistant").write(message["content"])
-
-# Get the default input value from session state
-default_value = st.session_state.default_input if "default_input" in st.session_state else ""
 
 # Input field for command arguments (without default value as it's not supported)
 user_input = st.chat_input("Enter your command input here...")

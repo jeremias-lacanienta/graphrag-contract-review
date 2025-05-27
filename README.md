@@ -2,6 +2,12 @@
 
 This repository contains all of the code mentioned in [GraphRAG in Commercial Contract Review](https://medium.com/@edward.sandoval.2000/graphrag-in-commercial-contract-review-7d4a6caa6eb5).
 
+## Recent Improvements
+- **Dynamic Agreement Detection**: The system now dynamically detects agreements mentioned in queries rather than using hardcoded values
+- **Scalable Architecture**: Enhanced to handle thousands of documents rather than just the three example agreements
+- **Better Error Handling**: Improved error handling with informative messages and graceful fallbacks
+- **Streamlined Setup**: Updated setup.sh script with proper database clearing
+
 ## New: Dual Environment Setup
 
 This repository now offers two separate environments to avoid dependency conflicts:
@@ -46,6 +52,21 @@ Example usage:
 # Answer questions using the aggregation of contracts
 ./run_graphrag.sh answer_aggregation_question 'How many contracts are governed by Delaware law?'
 ```
+
+### Testing
+
+To test the dynamic agreement detection and response generation:
+
+```bash
+# Run the test script with various example questions
+./run_test.sh
+```
+
+This script will:
+- Activate the .venv_graphrag environment
+- Run a series of test questions against the ContractService
+- Display the results for each question
+- Verify that the dynamic agreement detection works correctly
 
 ### Web Interface with Streamlit
 
@@ -141,5 +162,3 @@ The four steps are:
 2. Storing information extracted into a Knowledge Graph (Neo4j)
 3. Developing simple KG Data Retrieval Functions (Python)
 4. Building a Q&A Agent handling complex questions (Semantic Kernel, LLM, Neo4j)
-
-[Rest of original README content...]

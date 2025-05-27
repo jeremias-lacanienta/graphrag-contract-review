@@ -207,10 +207,55 @@ class ContractSearchService:
     
     async def answer_aggregation_question(self, user_question: str) -> str:
         """
-        Process any user question by converting it to a Cypher query,
-        executing it, and returning the results.
+        Answer a question about the agreements by aggregating data from the knowledge graph.
+        
+        Args:
+            user_question: The question asked by the user
+            
+        Returns:
+            A natural language answer to the question
         """
         try:
+            # Attempt a sophisticated RAG approach first
+            try:
+                # First try a direct query for relevant contract clauses
+                CLAUSE_SEARCH_QUERY = """
+                    MATCH (a:Agreement)-[:HAS_CLAUSE]->(cc:ContractClause)
+                    WHERE toLower(cc.text) CONTAINS toLower($search_text) 
+                       OR toLower(cc.type) CONTAINS toLower($search_text)
+                    RETURN cc.text as text, cc.type as type, a.name as agreement_name,
+                           a.contract_id as contract_id
+                    LIMIT 5
+                """
+                # Extract key terms from the question (simple approach)
+                search_terms = [word for word in user_question.lower().split() 
+                              if len(word) > 4 and word not in [
+                                  'what', 'where', 'when', 'which', 'whose', 'about', 
+                                  'there', 'their', 'these', 'those', 'that', 'this'
+                              ]]
+                # Use the first 3 substantive words for the search
+                search_text = ' '.join(search_terms[:3]) if search_terms else user_question
+                # Execute the search query
+                records, _, _ = self._driver.execute_query(
+                    CLAUSE_SEARCH_QUERY, 
+                    {'search_text': search_text}
+                )
+                # Process the results if any
+                if records and len(records) > 0:
+                    answer = "Here are the relevant contract clauses that might answer your question:\n\n"
+                    for record in records:
+                        agreement_name = record.get('agreement_name', 'Unknown Agreement')
+                        contract_id = record.get('contract_id', 'Unknown')
+                        clause_type = record.get('type', 'Unknown Type')
+                        clause_text = record.get('text', 'No text available')
+                        answer += f"From {agreement_name} (Contract ID: {contract_id}):\n"
+                        answer += f"Clause type: {clause_type}\n"
+                        answer += f"Text: {clause_text}\n\n"
+                    return answer
+            except Exception as e:
+                # Log the error but continue with other approaches
+                print(f"Error in direct clause search: {str(e)}")
+                
             # Define the Neo4j schema to help the LLM generate accurate queries
             NEO4J_SCHEMA = """
                 Node properties:
@@ -299,20 +344,52 @@ class ContractSearchService:
                 return result["result"]
             else:
                 # Dynamic handling for agreement-specific queries
-                # Extract the agreement name from the question if present
-                agreement_name = None
+                # Extract potential agreement names from the question
                 question_lower = user_question.lower()
                 
-                # Check for common agreement names in the question
-                if "master franchise agreement" in question_lower:
-                    agreement_name = "Master Franchise Agreement"
-                    contract_id = 3
-                elif "stock purchase" in question_lower:
-                    agreement_name = "Stock Purchase Agreement"
-                    contract_id = 1
-                elif "merger" in question_lower:
-                    agreement_name = "Merger Agreement"
-                    contract_id = 2
+                # First, query the database to get all available agreement names
+                try:
+                    AGREEMENT_NAMES_QUERY = """
+                        MATCH (a:Agreement)
+                        RETURN a.name as name, a.contract_id as contract_id
+                    """
+                    
+                    agreements_records, _, _ = self._driver.execute_query(AGREEMENT_NAMES_QUERY)
+                    
+                    # Find which agreement is mentioned in the question
+                    agreement_name = None
+                    contract_id = None
+                    
+                    if agreements_records and len(agreements_records) > 0:
+                        # Check each agreement name against the question
+                        for record in agreements_records:
+                            db_agreement_name = record.get('name')
+                            if db_agreement_name and db_agreement_name.lower() in question_lower:
+                                agreement_name = db_agreement_name
+                                contract_id = record.get('contract_id')
+                                break
+                            
+                            # Also check for partial matches (e.g., "franchise" for "Master Franchise Agreement")
+                            name_parts = db_agreement_name.lower().split() if db_agreement_name else []
+                            for part in name_parts:
+                                if len(part) > 4 and part in question_lower:  # Only match meaningful parts (longer than 4 chars)
+                                    agreement_name = db_agreement_name
+                                    contract_id = record.get('contract_id')
+                                    break
+                except Exception as e:
+                    print(f"Error querying agreement names: {str(e)}")
+                    
+                # Fallback to hardcoded checks if database query failed or no match was found
+                if not agreement_name:
+                    if "master franchise agreement" in question_lower or "franchise agreement" in question_lower:
+                        agreement_name = "Master Franchise Agreement"
+                        contract_id = 3
+                    elif "stock purchase" in question_lower:
+                        agreement_name = "Stock Purchase Agreement"
+                        contract_id = 1
+                    elif "merger" in question_lower:
+                        agreement_name = "Merger Agreement"
+                        contract_id = 2
                 
                 if agreement_name:
                     # Try to get actual data for this agreement from the database
@@ -320,18 +397,18 @@ class ContractSearchService:
                         # Query to get parties and their incorporation info for this agreement
                         AGREEMENT_QUERY = """
                             MATCH (a:Agreement)-[:HAS_CLAUSE]->(cc:ContractClause)
-                            WHERE toLower(a.name) CONTAINS toLower($agreement_name)
-                            WITH a
+                            WHERE toLower(a.name) CONTAINS toLower($agreement_name) OR a.contract_id = $contract_id
+                            WITH a, collect(cc) as clauses, collect(cc.type) as clause_types
                             MATCH (org:Organization)-[r:IS_PARTY_TO]->(a)
                             OPTIONAL MATCH (org)-[:INCORPORATED_IN]->(country)
                             RETURN a.contract_id as contract_id, a.name as name, 
-                                   org.name as org_name, r.role as role, 
-                                   country.name as country, collect(cc.type) as clause_types
+                                   collect({name: org.name, role: r.role, country: country.name}) as parties,
+                                   clause_types
                         """
                         
                         records, _, _ = self._driver.execute_query(
                             AGREEMENT_QUERY, 
-                            {'agreement_name': agreement_name}
+                            {'agreement_name': agreement_name, 'contract_id': contract_id}
                         )
                         
                         if records and len(records) > 0:
@@ -339,12 +416,14 @@ class ContractSearchService:
                             answer = f"Incorporation states for the parties in the {agreement_name}:\n\n"
                             
                             # Process each organization's data
-                            for record in records:
-                                org_name = record.get('org_name', 'Unknown Organization')
-                                role = record.get('role', 'Unknown Role')
-                                country = record.get('country', 'Unknown')
-                                
-                                answer += f"  - {org_name} ({role}): {country}\n"
+                            parties = records[0].get('parties', [])
+                            for party in parties:
+                                if party and 'name' in party:
+                                    org_name = party.get('name', 'Unknown Organization')
+                                    role = party.get('role', 'Unknown Role')
+                                    country = party.get('country', 'Unknown')
+                                    
+                                    answer += f"  - {org_name} ({role}): {country}\n"
                             
                             # Add additional contract details
                             contract_id = records[0].get('contract_id', 'Unknown')
@@ -401,7 +480,43 @@ class ContractSearchService:
                         return answer
                 
                 # No specific agreement found in the question
-                return "No results found for your question. Try asking about a specific agreement like the Master Franchise Agreement, Stock Purchase Agreement, or Merger Agreement."
+                # Try to get information about all agreements instead
+                try:
+                    ALL_AGREEMENTS_QUERY = """
+                        MATCH (a:Agreement)
+                        OPTIONAL MATCH (org:Organization)-[r:IS_PARTY_TO]->(a)
+                        OPTIONAL MATCH (org)-[:INCORPORATED_IN]->(country)
+                        RETURN a.contract_id as contract_id, a.name as name, 
+                               collect(DISTINCT org.name) as org_names,
+                               collect(DISTINCT country.name) as countries
+                        LIMIT 10
+                    """
+                    
+                    records, _, _ = self._driver.execute_query(ALL_AGREEMENTS_QUERY)
+                    
+                    if records and len(records) > 0:
+                        answer = "I couldn't find a specific agreement in your question. Here are some agreements in the database:\n\n"
+                        
+                        for record in records:
+                            agreement_name = record.get('name', 'Unknown Agreement')
+                            contract_id = record.get('contract_id', 'Unknown')
+                            org_names = record.get('org_names', [])
+                            countries = record.get('countries', [])
+                            
+                            answer += f"• {agreement_name} (ID: {contract_id})\n"
+                            if org_names and len(org_names) > 0:
+                                unique_orgs = [org for org in org_names if org]
+                                if unique_orgs:
+                                    answer += f"  - Parties: {', '.join(unique_orgs[:3])}\n"
+                            
+                        answer += "\nTry asking about one of these agreements specifically. For example:\n"
+                        answer += f"'What are the incorporation states for parties in the {records[0].get('name', 'Stock Purchase Agreement')}?'"
+                        
+                        return answer
+                except Exception as e:
+                    print(f"Error in all agreements query: {str(e)}")
+                
+                return "No specific agreement found in your question. Try asking about a specific agreement like the Master Franchise Agreement, Stock Purchase Agreement, or Merger Agreement."
                 
         except Exception as e:
             # Log the error for debugging

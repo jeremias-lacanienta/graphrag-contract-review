@@ -12,7 +12,7 @@
         "role": "Franchisor",
         "name": "Smaaash Entertainment Private Limited",
         "incorporation_country": "India",
-        "incorporation_state": ""
+        "incorporation_state": "Maharashtra"
       },
       {
         "role": "Franchisee",
@@ -60,10 +60,8 @@
       },
       {
         "clause_type": "Non-Disparagement",
-        "exists": true,
-        "excerpts": [
-          "Franchisee shall not do anything or suffer anything to be done which may adversely affect any rights of Franchisor in and to any Franchisor Property, or any registrations thereof or which, directly or indirectly, may reduce or dilute the value or distinctiveness of such Franchisor Property, in particular the Trademarks, or disparage or detract from Franchisor’s reputation."
-        ]
+        "exists": false,
+        "excerpts": []
       },
       {
         "clause_type": "Termination For Convenience",
@@ -105,7 +103,7 @@
         "clause_type": "Minimum Commitment",
         "exists": true,
         "excerpts": [
-          "Franchisee or third party sub-franchisees shall be under an obligation to set up at least 6 (six) Smaaash Centres during the first Contract Year or any other time period as may be provided by Franchisor."
+          "Franchisee or third party sub –franchisees shall be under an obligation to set up at least 6 (six) Smaaash Centres during the first Contract Year or any other time period as may be provided by Franchisor."
         ]
       },
       {
@@ -117,7 +115,7 @@
         "clause_type": "IP Ownership Assignment",
         "exists": true,
         "excerpts": [
-          "Franchisor is the sole owner of any and all intellectual property rights relating to the Smaaash Centres and their products and services existing as of the Effective Date, including, but not limited to, the Trademarks and all the goodwill relating thereto (the “Franchisor Property”). Franchisee, or any third party franchisee, by reason of this Agreement, has not and shall not acquire any right, title, interest or claim of ownership in any of the Franchisor Property in the Territory or elsewhere, except to the extent provided under the license granted under Sections 1 and 3 of this Agreement."
+          "Franchisor is the sole owner of any and all intellectual property rights relating to the Smaaash Centres and their products and services existing as of the Effective Date, including, but not limited to, the Trademarks and all the goodwill relating thereto (the “Franchisor Property”)."
         ]
       },
       {
