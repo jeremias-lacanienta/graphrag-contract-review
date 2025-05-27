@@ -79,8 +79,8 @@ The GraphRAG-only implementation now uses Jinja2 templates for better display fo
 To clean up the environment and reset the Neo4j database:
 
 ```bash
-# Run the cleaning script
-./clear_all.sh
+# Run the setup script
+./setup.sh
 ```
 
 This script will:
