@@ -56,6 +56,65 @@ st.markdown("""
         margin-bottom: 20px;
         border-bottom: 1px solid #ddd;
     }
+    /* Toggle Button Styling */
+    div.stButton > button {
+        width: 100%;
+        border-radius: 5px;
+        border: 1px solid #ddd;
+        padding: 5px 10px; /* Reduced padding to minimize space */
+        text-align: left;
+        background-color: #f8f9fa;
+        transition: all 0.3s;
+        margin-bottom: 0px; /* Removed spacing between buttons */
+    }
+    /* Reduce spacing in sidebar button containers */
+    section[data-testid="stSidebar"] div.stButton {
+        margin-top: 0px;
+        margin-bottom: 0px;
+        padding-top: 0px;
+        padding-bottom: 0px;
+    }
+    div.stButton > button:hover {
+        background-color: #e9ecef;
+        border-color: #bbb;
+    }
+    /* Style for selected button using session state */
+    div.stButton > button[kind="secondary"]:focus {
+        box-shadow: none;
+    }
+    /* Primary button styling for active state */
+    div.stButton > button[kind="primary"] {
+        background-color: #4a86e8;
+        color: white;
+        border-color: #3a76d8;
+        font-weight: 500;
+        padding: 5px 10px 5px 15px; /* Match the reduced padding */
+    }
+    div.stButton > button[kind="primary"]::before {
+        content: "• ";
+        font-size: 20px;
+        position: relative;
+        top: 1px;
+    }
+    div.stButton > button[kind="primary"]:hover {
+        background-color: #3a76d8;
+        border-color: #2a66c8;
+    }
+    /* Style for the suggestion info box */
+    div[data-testid="stInfo"] {
+        background-color: #e8f0fe;
+        border-left-color: #4a86e8;
+        padding: 10px;
+        margin-bottom: 10px;
+        border-radius: 4px;
+    }
+    /* Center certain elements */
+    .centered-text {
+        text-align: center;
+        margin-left: auto;
+        margin-right: auto;
+        display: block;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -94,10 +153,6 @@ def run_async(coroutine):
 # Main header
 st.markdown("<h1 class='main-header'>GraphRAG Contract Review System</h1>", unsafe_allow_html=True)
 st.markdown("<p>Interactive interface for exploring and analyzing contracts using graph-based retrieval</p>", unsafe_allow_html=True)
-
-# Sidebar with command options
-st.sidebar.markdown("## Command Menu")
-st.sidebar.markdown("Select a command to execute")
 
 # Command definitions based on run_graphrag.sh
 commands = [
@@ -159,19 +214,56 @@ commands = [
     }
 ]
 
-# Sidebar command selection
-selected_command = st.sidebar.radio("Select Command", [cmd["name"] for cmd in commands])
-selected_cmd = next((cmd for cmd in commands if cmd["name"] == selected_command), None)
+# Sidebar with command options
+st.sidebar.markdown("## Command Menu")
+st.sidebar.markdown("Select a command to execute")
+
+# Initialize the selected command in session state if not already set
+if 'selected_command' not in st.session_state:
+    st.session_state.selected_command = commands[0]["name"]
+
+# Initialize default input text in session state
+if 'default_input' not in st.session_state:
+    st.session_state.default_input = commands[0]["example"]
+
+# Generate the styled toggle buttons
+for cmd in commands:
+    # Check if this button should be active based on the session state
+    is_active = st.session_state.selected_command == cmd["name"]
+    
+    # Create the button with the proper styling
+    if st.sidebar.button(
+        cmd["name"], 
+        key=f"toggle_{cmd['name']}", 
+        use_container_width=True,
+        type="primary" if is_active else "secondary"
+    ):
+        # Update the session state when this button is clicked
+        st.session_state.selected_command = cmd["name"]
+        # Set the default input text to the example for this command
+        st.session_state.default_input = cmd["example"]
+        st.rerun()
+
+# Get the selected command details
+selected_cmd = next((cmd for cmd in commands if cmd["name"] == st.session_state.selected_command), None)
 
 # Display information about the selected command
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"### {selected_cmd['name']}")
 st.sidebar.markdown(f"{selected_cmd['description']}")
 st.sidebar.markdown(f"**Input format**: {selected_cmd['args_description']}")
-st.sidebar.markdown(f"**Example**: `{selected_cmd['example']}`")
 
-# Command execution section
-st.markdown("<h2 class='sub-header'>Execute Command</h2>", unsafe_allow_html=True)
+# Create a more reliable copy-to-input mechanism
+st.sidebar.markdown("**Example**:")
+example_container = st.sidebar.container()
+col1, col2 = example_container.columns([4, 1])
+col1.code(selected_cmd['example'], language=None)
+if col2.button("Copy", key="copy_example"):
+    # Set the default input value (will be used next time the chat input is rendered)
+    st.session_state.default_input = selected_cmd['example']
+    # Provide feedback to the user
+    st.sidebar.success("Example copied! It will be inserted in the input field.")
+    st.rerun()
 
 # Chat-like input interface
 for message in st.session_state.messages:
@@ -180,7 +272,10 @@ for message in st.session_state.messages:
     else:
         st.chat_message("assistant").write(message["content"])
 
-# Input field for command arguments
+# Get the default input value from session state
+default_value = st.session_state.default_input if "default_input" in st.session_state else ""
+
+# Input field for command arguments (without default value as it's not supported)
 user_input = st.chat_input("Enter your command input here...")
 
 if user_input:
@@ -274,6 +369,22 @@ with st.sidebar.expander("About GraphRAG Contract Review"):
     For more information, see the project documentation.
     """)
 
-# Footer
-st.markdown("<div class='separator'></div>", unsafe_allow_html=True)
-st.markdown("GraphRAG Contract Review System © 2025", unsafe_allow_html=True)
+# Footer at the absolute bottom of the page
+st.markdown(
+    """
+    <style>
+    .footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background-color: white;
+        text-align: left;
+        padding: 10px;
+        border-top: 1px solid #ddd;
+    }
+    </style>
+    <div class="footer">GraphRAG Contract Review System © 2025</div>
+    """,
+    unsafe_allow_html=True
+)
