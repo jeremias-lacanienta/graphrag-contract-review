@@ -30,7 +30,8 @@ if ! command -v cypher-shell &> /dev/null; then
   echo "❌ cypher-shell not found."
   exit 1
 else
-  # Use cypher-shell directly
+  # Use cypher-shell to clear all nodes and relationships
+  echo "MATCH (n) DETACH DELETE n;" | cypher-shell -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -a "$NEO4J_URI"
   echo "✅ Neo4j database cleared successfully"
 fi
 
