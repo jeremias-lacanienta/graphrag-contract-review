@@ -215,8 +215,6 @@ commands = [
 ]
 
 # Sidebar with command options
-st.sidebar.markdown("## Command Menu")
-st.sidebar.markdown("Select a command to execute")
 
 # Initialize the selected command in session state if not already set
 if 'selected_command' not in st.session_state:
