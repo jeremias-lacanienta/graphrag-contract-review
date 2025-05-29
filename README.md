@@ -7,6 +7,71 @@ This repository contains all of the code mentioned in [GraphRAG in Commercial Co
 - **Scalable Architecture**: Enhanced to handle thousands of documents rather than just the three example agreements
 - **Better Error Handling**: Improved error handling with informative messages and graceful fallbacks
 - **Streamlined Setup**: Updated setup.sh script with proper database clearing
+- **Production Deployment**: Added EC2 deployment scripts and Docker support for production use
+
+## Deployment Options
+
+### Quick Start Deployment
+
+For easy deployment, use the quick deploy script:
+
+```bash
+chmod +x quick_deploy.sh
+./quick_deploy.sh
+```
+
+This interactive script provides options for:
+1. **Native EC2 Deployment** - Direct installation on EC2 with Nginx proxy on port 80
+2. **Docker Deployment** - Containerized deployment with Docker Compose
+3. **Local Development** - Set up for local development and testing
+4. **View Deployment Guide** - Detailed deployment instructions
+
+### Production Deployment on EC2
+
+Deploy the application on an AWS EC2 instance with Streamlit running on port 80:
+
+```bash
+# Clone the repository on your EC2 instance
+git clone <your-repo-url>
+cd graphrag-contract-review
+
+# Run the automated deployment script
+chmod +x deploy_ec2.sh
+./deploy_ec2.sh
+```
+
+The deployment script automatically:
+- Installs Python 3.10, Neo4j, and Nginx
+- Sets up the Python virtual environment
+- Configures systemd service for auto-start
+- Sets up Nginx reverse proxy on port 80
+- Configures firewall rules
+
+**Prerequisites for EC2 deployment:**
+- Ubuntu 20.04 or 22.04 EC2 instance
+- At least 4GB RAM and 2 vCPUs
+- Security group allowing ports 22 (SSH), 80 (HTTP), and 7687 (Neo4j)
+- OpenAI API key
+
+### Docker Deployment
+
+For containerized deployment:
+
+```bash
+# Create environment file
+echo "OPENAI_API_KEY=your_key_here" > .env
+
+# Deploy with Docker Compose
+docker-compose up -d
+```
+
+This sets up:
+- Neo4j database container
+- Streamlit application container
+- Nginx reverse proxy container
+- All services accessible on port 80
+
+For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## New: Dual Environment Setup
 
