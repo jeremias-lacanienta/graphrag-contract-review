@@ -20,29 +20,34 @@ echo ""
 
 echo -e "${CYAN}Choose your deployment method:${NC}"
 echo ""
-echo -e "${YELLOW}1.${NC} Native EC2 Deployment (Recommended)"
-echo -e "   ${GREEN}✓${NC} Direct installation on EC2 instance"
-echo -e "   ${GREEN}✓${NC} Best performance"
-echo -e "   ${GREEN}✓${NC} Automatic service management"
+echo -e "${YELLOW}1.${NC} Native EC2 Deployment (Full)"
+echo -e "   ${GREEN}✓${NC} Complete system upgrade and installation"
+echo -e "   ${GREEN}✓${NC} Best for new instances"
+echo -e "   ${GREEN}✓${NC} Includes retry logic for package issues"
 echo ""
-echo -e "${YELLOW}2.${NC} Docker Deployment"
+echo -e "${YELLOW}2.${NC} Minimal EC2 Deployment (Recommended for package issues)"
+echo -e "   ${GREEN}✓${NC} Skips system upgrades"
+echo -e "   ${GREEN}✓${NC} Installs only essential packages"
+echo -e "   ${GREEN}✓${NC} Faster deployment, fewer conflicts"
+echo ""
+echo -e "${YELLOW}3.${NC} Docker Deployment"
 echo -e "   ${GREEN}✓${NC} Containerized deployment"
 echo -e "   ${GREEN}✓${NC} Easy to manage and update"
 echo -e "   ${GREEN}✓${NC} Isolated environment"
 echo ""
-echo -e "${YELLOW}3.${NC} Local Development Setup"
+echo -e "${YELLOW}4.${NC} Local Development Setup"
 echo -e "   ${GREEN}✓${NC} Run locally for development"
 echo -e "   ${GREEN}✓${NC} Uses existing setup scripts"
 echo ""
-echo -e "${YELLOW}4.${NC} View Deployment Guide"
+echo -e "${YELLOW}5.${NC} View Deployment Guide"
 echo -e "   ${GREEN}✓${NC} Read detailed instructions"
 echo ""
 
-read -p "Enter your choice (1-4): " choice
+read -p "Enter your choice (1-5): " choice
 
 case $choice in
     1)
-        echo -e "${GREEN}🚀 Starting Native EC2 Deployment...${NC}"
+        echo -e "${GREEN}🚀 Starting Full EC2 Deployment...${NC}"
         echo ""
         echo -e "${YELLOW}Prerequisites:${NC}"
         echo "- Ubuntu EC2 instance (20.04 or 22.04)"
@@ -50,15 +55,36 @@ case $choice in
         echo "- Security group allowing ports 22, 80, 7687"
         echo "- OpenAI API key"
         echo ""
+        echo -e "${YELLOW}Note: This includes full system upgrade and may take longer${NC}"
+        echo ""
         read -p "Do you want to continue? (y/N): " confirm
         if [[ $confirm =~ ^[Yy]$ ]]; then
-            echo -e "${BLUE}Running deployment script...${NC}"
+            echo -e "${BLUE}Running full deployment script...${NC}"
             ./deploy_ec2.sh
         else
             echo -e "${YELLOW}Deployment cancelled.${NC}"
         fi
         ;;
     2)
+        echo -e "${GREEN}🚀 Starting Minimal EC2 Deployment...${NC}"
+        echo ""
+        echo -e "${YELLOW}Prerequisites:${NC}"
+        echo "- Ubuntu EC2 instance (20.04 or 22.04)"
+        echo "- At least 4GB RAM and 2 vCPUs"
+        echo "- Security group allowing ports 22, 80, 7687"
+        echo "- OpenAI API key"
+        echo ""
+        echo -e "${GREEN}✅ This option skips system upgrades and is recommended if you encountered package download errors${NC}"
+        echo ""
+        read -p "Do you want to continue? (y/N): " confirm
+        if [[ $confirm =~ ^[Yy]$ ]]; then
+            echo -e "${BLUE}Running minimal deployment script...${NC}"
+            ./deploy_ec2_minimal.sh
+        else
+            echo -e "${YELLOW}Deployment cancelled.${NC}"
+        fi
+        ;;
+    3)
         echo -e "${GREEN}🐳 Starting Docker Deployment...${NC}"
         echo ""
         echo -e "${YELLOW}Prerequisites:${NC}"
@@ -103,7 +129,7 @@ EOF
         echo "- View logs: docker-compose logs -f"
         echo "- Stop: docker-compose down"
         ;;
-    3)
+    4)
         echo -e "${GREEN}💻 Setting up local development environment...${NC}"
         echo ""
         if [ -f "./run_streamlit.sh" ]; then
@@ -116,7 +142,7 @@ EOF
             echo -e "${BLUE}You can now run: ./run_streamlit.sh${NC}"
         fi
         ;;
-    4)
+    5)
         echo -e "${GREEN}📖 Opening deployment guide...${NC}"
         if command -v less &> /dev/null; then
             less DEPLOYMENT.md
@@ -127,7 +153,7 @@ EOF
         fi
         ;;
     *)
-        echo -e "${RED}❌ Invalid choice. Please run the script again and choose 1-4.${NC}"
+        echo -e "${RED}❌ Invalid choice. Please run the script again and choose 1-5.${NC}"
         exit 1
         ;;
 esac

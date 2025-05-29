@@ -21,13 +21,39 @@ if [[ $EUID -eq 0 ]]; then
    exit 1
 fi
 
-# Update system packages
+# Function to retry apt operations
+retry_apt() {
+    local max_attempts=3
+    local attempt=1
+    local cmd="$@"
+    
+    while [ $attempt -le $max_attempts ]; do
+        echo -e "${YELLOW}Attempt $attempt of $max_attempts: $cmd${NC}"
+        if eval "$cmd"; then
+            return 0
+        else
+            echo -e "${YELLOW}⚠️ Attempt $attempt failed. Retrying...${NC}"
+            sleep 5
+            attempt=$((attempt + 1))
+        fi
+    done
+    
+    echo -e "${RED}❌ All attempts failed for: $cmd${NC}"
+    return 1
+}
+
+# Update system packages with retry logic
 echo -e "${YELLOW}📦 Updating system packages...${NC}"
-sudo apt update && sudo apt upgrade -y
+retry_apt "sudo apt update"
+
+echo -e "${YELLOW}📦 Upgrading system packages (with --fix-missing)...${NC}"
+sudo apt upgrade -y --fix-missing || {
+    echo -e "${YELLOW}⚠️ Some packages failed to upgrade, continuing with installation...${NC}"
+}
 
 # Install required system packages
 echo -e "${YELLOW}📦 Installing system dependencies...${NC}"
-sudo apt install -y \
+retry_apt "sudo apt install -y --fix-missing \
     python3.10 \
     python3.10-venv \
     python3.10-dev \
@@ -38,31 +64,61 @@ sudo apt install -y \
     wget \
     unzip \
     build-essential \
-    netcat-openbsd
+    netcat-openbsd \
+    software-properties-common \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release"
+
+# Check if Neo4j repository is already added
+if ! grep -q "debian.neo4j.com" /etc/apt/sources.list.d/neo4j.list 2>/dev/null; then
+    echo -e "${YELLOW}📦 Adding Neo4j repository...${NC}"
+    
+    # Use the newer method for adding GPG keys
+    curl -fsSL https://debian.neo4j.com/neotechnology.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/neo4j.gpg
+    echo "deb [signed-by=/usr/share/keyrings/neo4j.gpg] https://debian.neo4j.com stable latest" | sudo tee /etc/apt/sources.list.d/neo4j.list
+    
+    # Update package list
+    retry_apt "sudo apt update"
+else
+    echo -e "${GREEN}✅ Neo4j repository already configured${NC}"
+fi
 
 # Install Neo4j
 echo -e "${YELLOW}📦 Installing Neo4j...${NC}"
-wget -O - https://debian.neo4j.com/neotechnology.gpg.key | sudo apt-key add -
-echo 'deb https://debian.neo4j.com stable latest' | sudo tee -a /etc/apt/sources.list.d/neo4j.list
-sudo apt update
-sudo apt install -y neo4j
+retry_apt "sudo apt install -y neo4j"
 
 # Configure Neo4j
 echo -e "${YELLOW}⚙️ Configuring Neo4j...${NC}"
 sudo systemctl enable neo4j
-sudo systemctl start neo4j
 
-# Wait for Neo4j to start
-echo -e "${YELLOW}⏳ Waiting for Neo4j to start...${NC}"
-sleep 10
+# Check if Neo4j is already running
+if sudo systemctl is-active --quiet neo4j; then
+    echo -e "${GREEN}✅ Neo4j is already running${NC}"
+else
+    sudo systemctl start neo4j
+    echo -e "${YELLOW}⏳ Waiting for Neo4j to start...${NC}"
+    sleep 15
+fi
 
-# Set Neo4j initial password (you should change this)
-echo -e "${YELLOW}🔐 Setting Neo4j password...${NC}"
-sudo neo4j-admin set-initial-password neo4j123
+# Check if Neo4j password is already set
+if ! sudo neo4j-admin dbms set-initial-password neo4j123 2>/dev/null; then
+    echo -e "${YELLOW}⚠️ Neo4j password may already be set, continuing...${NC}"
+fi
 
-# Restart Neo4j with new password
+# Restart Neo4j to ensure it's running with correct configuration
 sudo systemctl restart neo4j
 sleep 10
+
+# Verify Neo4j is running
+if sudo systemctl is-active --quiet neo4j; then
+    echo -e "${GREEN}✅ Neo4j is running successfully${NC}"
+else
+    echo -e "${RED}❌ Neo4j failed to start. Checking logs...${NC}"
+    sudo journalctl -u neo4j --no-pager -n 20
+    exit 1
+fi
 
 # Get the current directory (where the app is located)
 APP_DIR=$(pwd)
@@ -97,6 +153,7 @@ python3.10 -m venv .venv_graphrag
 source .venv_graphrag/bin/activate
 
 # Upgrade pip and install requirements
+echo -e "${YELLOW}📦 Installing Python packages...${NC}"
 pip install --upgrade pip
 pip install -r requirements_graphrag.txt
 
@@ -165,7 +222,12 @@ sudo ln -sf /etc/nginx/sites-available/graphrag /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 
 # Test Nginx configuration
-sudo nginx -t
+if sudo nginx -t; then
+    echo -e "${GREEN}✅ Nginx configuration is valid${NC}"
+else
+    echo -e "${RED}❌ Nginx configuration error${NC}"
+    exit 1
+fi
 
 # Configure firewall
 echo -e "${YELLOW}🔥 Configuring firewall...${NC}"
@@ -184,6 +246,9 @@ sudo systemctl restart nginx
 # Start the application
 sudo systemctl start graphrag-streamlit
 
+# Wait a moment for services to start
+sleep 5
+
 # Check service status
 echo -e "${GREEN}✅ Deployment completed!${NC}"
 echo "=================================================================="
@@ -194,7 +259,12 @@ echo -e "${YELLOW}GraphRAG App:${NC} $(sudo systemctl is-active graphrag-streaml
 
 echo ""
 echo -e "${GREEN}🌐 Your application should now be accessible at:${NC}"
-echo -e "${BLUE}http://$(curl -s ifconfig.me)${NC}"
+if command -v curl &> /dev/null; then
+    PUBLIC_IP=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || echo "your-ec2-public-ip")
+    echo -e "${BLUE}http://${PUBLIC_IP}${NC}"
+else
+    echo -e "${BLUE}http://your-ec2-public-ip${NC}"
+fi
 echo -e "${BLUE}http://localhost${NC} (if accessing locally)"
 
 echo ""
@@ -209,4 +279,11 @@ echo -e "${YELLOW}🔧 Useful commands:${NC}"
 echo "- Check app logs: sudo journalctl -u graphrag-streamlit -f"
 echo "- Restart app: sudo systemctl restart graphrag-streamlit"
 echo "- Check Neo4j status: sudo systemctl status neo4j"
-echo "- Check Nginx status: sudo systemctl status nginx" 
+echo "- Check Nginx status: sudo systemctl status nginx"
+
+# Check if there were any issues and provide troubleshooting info
+if ! sudo systemctl is-active --quiet graphrag-streamlit; then
+    echo ""
+    echo -e "${YELLOW}⚠️ Application service is not running. Check logs with:${NC}"
+    echo "sudo journalctl -u graphrag-streamlit -f"
+fi 
