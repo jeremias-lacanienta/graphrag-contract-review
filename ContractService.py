@@ -446,36 +446,36 @@ class ContractSearchService:
                     
                     # If database query didn't work, fall back to hardcoded responses
                     # based on the agreement type
-                    if agreement_name == "Master Franchise Agreement":
-                        answer = "Incorporation states for the parties in the Master Franchise Agreement:\n\n"
-                        answer += "  - Smaaash Entertainment Private Limited (Franchisor): India\n"
-                        answer += "  - I-AM Capital Acquisition Company (Franchisee): New York\n\n"
+                    # if agreement_name == "Master Franchise Agreement":
+                    #     answer = "Incorporation states for the parties in the Master Franchise Agreement:\n\n"
+                    #     answer += "  - Smaaash Entertainment Private Limited (Franchisor): India\n"
+                    #     answer += "  - I-AM Capital Acquisition Company (Franchisee): New York\n\n"
                         
-                        answer += "Additional contract details:\n"
-                        answer += "  - Contract ID: 3\n"
-                        answer += "  - Key clauses include: IP Ownership Assignment, Non-Compete, Exclusivity\n"
-                        answer += "  - The franchisee is incorporated in New York\n"
-                        answer += "  - The franchisor is an Indian company\n"
+                    #     answer += "Additional contract details:\n"
+                    #     answer += "  - Contract ID: 3\n"
+                    #     answer += "  - Key clauses include: IP Ownership Assignment, Non-Compete, Exclusivity\n"
+                    #     answer += "  - The franchisee is incorporated in New York\n"
+                    #     answer += "  - The franchisor is an Indian company\n"
                         
-                        return answer
-                    elif agreement_name == "Stock Purchase Agreement":
-                        answer = "Incorporation states for the parties in the Stock Purchase Agreement:\n\n"
-                        answer += "  - Birch First Global Investments Inc. (Buyer): Delaware\n"
-                        answer += "  - ATN International, Inc. (Seller): Bermuda\n\n"
+                    #     return answer
+                    # elif agreement_name == "Stock Purchase Agreement":
+                    #     answer = "Incorporation states for the parties in the Stock Purchase Agreement:\n\n"
+                    #     answer += "  - Birch First Global Investments Inc. (Buyer): Delaware\n"
+                    #     answer += "  - ATN International, Inc. (Seller): Bermuda\n\n"
                         
-                        answer += "Additional contract details:\n"
-                        answer += "  - Contract ID: 1\n"
-                        answer += "  - Key clauses include: Payment Terms, Representations and Warranties\n"
+                    #     answer += "Additional contract details:\n"
+                    #     answer += "  - Contract ID: 1\n"
+                    #     answer += "  - Key clauses include: Payment Terms, Representations and Warranties\n"
                         
-                        return answer
-                    elif agreement_name == "Merger Agreement":
-                        answer = "Incorporation states for the parties in the Merger Agreement:\n\n"
-                        answer += "  - Simplicity Esports and Gaming Company (Acquirer): Delaware\n"
-                        answer += "  - Cyberfy Holdings Inc. (Target): Nevada\n\n"
+                    #     return answer
+                    # elif agreement_name == "Merger Agreement":
+                    #     answer = "Incorporation states for the parties in the Merger Agreement:\n\n"
+                    #     answer += "  - Simplicity Esports and Gaming Company (Acquirer): Delaware\n"
+                    #     answer += "  - Cyberfy Holdings Inc. (Target): Nevada\n\n"
                         
-                        answer += "Additional contract details:\n"
-                        answer += "  - Contract ID: 2\n"
-                        answer += "  - Key clauses include: Termination, Due Diligence, Representations\n"
+                    #     answer += "Additional contract details:\n"
+                    #     answer += "  - Contract ID: 2\n"
+                    #     answer += "  - Key clauses include: Termination, Due Diligence, Representations\n"
                         
                         return answer
                 
