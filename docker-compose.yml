@@ -28,8 +28,14 @@ services:
       - NEO4J_USERNAME=neo4j
       - NEO4J_PASSWORD=password123
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Add any AZURE_OPENAI_... variables here if your scripts need them directly from compose
+      # - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      # - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      # - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
     ports:
       - "80:80"
+    volumes:
+      - ./data:/app/data  # Maps host ./data to /app/data in container
     depends_on:
       - neo4j
     networks:
