@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README*.md
+images/
+*.png
+*.jpg
+*.jpeg
+
+# Virtual environments
+.venv*
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Node modules (if any)
+node_modules/
+
+# Docker files (we want these in the image)
+# Dockerfile
+# docker-compose.yml
+
+# Environment files (secrets)
+.env
+.env.local
+.env.production
+
+# Database files
+*.db
+*.sqlite
+
+# Build artifacts
+dist/
+build/ 
