@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   neo4j:
-    image: neo4j:5.15-community
+    image: neo4j:5.25-community
     container_name: neo4j-graphrag
     environment:
       - NEO4J_AUTH=neo4j/password123
