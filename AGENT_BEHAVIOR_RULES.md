@@ -21,3 +21,12 @@
 - Ask about schema changes
 - Discuss query validation
 - Verify approach for template modifications
+
+## Don't Do
+- Do not modify any files outside of .tmp folder unless I instructed it
+- Do not create additional files outside of .tmp folder unless I instructed it
+
+## Do
+- Do create any file for testing purposes or validation inside .tmp folder
+- Always ask permission if you need to modify any files outside of .tmp folder
+- You can copy files from outside of .tmp folder to inside of .tmp folder if you need to modify and test it
