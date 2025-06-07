@@ -1,0 +1,16 @@
+{
+  "project_name": "GraphRAG Contract Review",
+  "description": "Contract analysis with GraphRAG and Neo4j",
+  "guidelines_path": "AGENT_GUIDELINES.md",
+  "behavior_rules": "AGENT_BEHAVIOR_RULES.md",
+  "workflow": "ingest.sh → create_graph_from_json_azure.py → app_streamlit.py",
+  "core_files": ["ContractService.py", "AgreementSchema.py"],
+  "documentation": {
+    "readme": "README.md",
+    "guidelines": "AGENT_GUIDELINES.md",
+    "behavior_rules": "AGENT_BEHAVIOR_RULES.md"
+  },
+  "setup": "setup.sh",
+  "templates": "templates/",
+  "sample_data": "data/input/"
+}

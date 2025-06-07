@@ -7,6 +7,16 @@ This repository contains all of the code mentioned in [GraphRAG in Commercial Co
 - **Scalable Architecture**: Enhanced to handle thousands of documents rather than just the three example agreements
 - **Better Error Handling**: Improved error handling with informative messages and graceful fallbacks
 - **Streamlined Setup**: Updated setup.sh script with proper database clearing
+- **AI Assistant Guidelines**: Added AGENT_GUIDELINES.md and .aigenrc for streamlined AI assistant interaction
+
+## AI Assistant Guidelines
+
+Minimal configuration files for AI assistants:
+
+- `AGENT_GUIDELINES.md`: Core components and workflow
+- `AGENT_BEHAVIOR_RULES.md`: Interaction rules
+- `AI_PROMPT_EXAMPLES.md`: Sample prompts
+- `.aigenrc`: Configuration file
 
 ## New: Dual Environment Setup
 
