@@ -386,16 +386,16 @@ class ContractSearchService:
                     print(f"Error querying agreement names: {str(e)}")
                     
                 # Fallback to hardcoded checks if database query failed or no match was found
-                if not agreement_name:
-                    if "master franchise agreement" in question_lower or "franchise agreement" in question_lower:
-                        agreement_name = "Master Franchise Agreement"
-                        contract_id = 3
-                    elif "stock purchase" in question_lower:
-                        agreement_name = "Stock Purchase Agreement"
-                        contract_id = 1
-                    elif "merger" in question_lower:
-                        agreement_name = "Merger Agreement"
-                        contract_id = 2
+                # if not agreement_name:
+                #     if "master franchise agreement" in question_lower or "franchise agreement" in question_lower:
+                #         agreement_name = "Master Franchise Agreement"
+                #         contract_id = 3
+                #     elif "stock purchase" in question_lower:
+                #         agreement_name = "Stock Purchase Agreement"
+                #         contract_id = 1
+                #     elif "merger" in question_lower:
+                #         agreement_name = "Merger Agreement"
+                #         contract_id = 2
                 
                 if agreement_name:
                     # Try to get actual data for this agreement from the database
