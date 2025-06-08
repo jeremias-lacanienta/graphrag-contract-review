@@ -1,9 +1,14 @@
 import streamlit as st
 import os
+import sys
 import asyncio
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 from semantic_kernel.contents.chat_history import ChatHistory
+
+# Add the parent directory to sys.path to enable imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from ContractPlugin import ContractPlugin
 from ContractService import ContractSearchService
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase

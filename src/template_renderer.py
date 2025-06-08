@@ -26,7 +26,12 @@ from typing import Any, Dict, List, Union, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 # Configure Jinja2 environment
-template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+# Get the directory of the current file (src directory)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Go up one level to get the project root directory
+project_root = os.path.dirname(current_dir)
+# Templates are in the templates directory at the project root
+template_dir = os.path.join(project_root, "templates")
 env = Environment(
     loader=FileSystemLoader(template_dir),
     autoescape=select_autoescape(['html', 'xml']),

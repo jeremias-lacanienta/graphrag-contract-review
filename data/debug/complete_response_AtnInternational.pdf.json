@@ -71,14 +71,15 @@
         "clause_type": "Change Of Control",
         "exists": true,
         "excerpts": [
-          "Change of Control means any contract or transaction or series of related contracts or transactions (regardless of form or structure) that would directly result in the Control of a Person or its business or assets changing from one Person to another Person (alone or in combination with any other third Person)."
+          "2.8 Change of Control . “Change of Control” means any contract or transaction or series of related contracts or transactions (regardless of form or structure) that would directly result in the Control of a Person or its business or assets changing from one Person to another Person (alone or in combination with any other third Person).",
+          "3.5 Assignment and Delegation; Change of Control . (c) Subject to Section 3 .5(b), in the event that Vendor, prior to Location Acceptance at all Cell Sites and without the prior written consent of AT&T, consummates (i) any sale, assignment, transfer, license, lease or conveyance of any interest in any Cell Site or any of the Material or Services contemplated in this Agreement or (ii) any Change of Control of Vendor to a Restricted Entity or to any other Person who, in AT&T’s reasonable discretion, lacks the financial or operational resources, skill or expertise to fulfill the obligations of Vendor contemplated by this Agreement, then AT&T may terminate this Agreement and exercise any other remedies available to AT&T under this Agreement or at law or equity, including any of its Termination Remedies set forth in the Build Addendum."
         ]
       },
       {
         "clause_type": "Anti-Assignment",
         "exists": true,
         "excerpts": [
-          "Neither Party may assign, delegate, or otherwise transfer any of its duties or obligations under this Agreement, voluntarily or involuntarily, without the prior written consent of the other Party."
+          "3.5 Assignment and Delegation; Change of Control . (a) Neither Party may assign, delegate, or otherwise transfer any of its duties or obligations under this Agreement, voluntarily or involuntarily, without the prior written consent of the other Party (which shall not be unreasonably withheld, conditioned or delayed and which shall be signed by an authorized representative of the Party giving such consent); provided, however, that without the consent of Vendor, AT&T may assign its rights, or delegate its duties, or both, in whole or in part, to any present or future Affiliate of AT&T so long as AT&T Mobility LLC shall remain liable for such Affiliate’s failure to satisfy its obligations hereunder."
         ]
       },
       {
@@ -105,7 +106,7 @@
         "clause_type": "IP Ownership Assignment",
         "exists": true,
         "excerpts": [
-          "AT&T shall be the exclusive owner of all right, title, and interest in and to all Paid-For Development, including, without limitation, all Intellectual Property Rights therein and thereto."
+          "3.29 Ownership of Paid-For Development, Use and Reservation of Rights (a) Paid-For Development. AT&T shall be the exclusive owner of all right, title, and interest in and to all Paid-For Development (defined below), including, without limitation, all Intellectual Property Rights therein and thereto. Vendor shall assign or have assigned to AT&T and hereby assigns to AT&T all Intellectual Property Rights in and to the Paid-For Development."
         ]
       },
       {
@@ -117,7 +118,7 @@
         "clause_type": "License grant",
         "exists": true,
         "excerpts": [
-          "Vendor hereby grants and promises to grant and have granted to AT&T and its Affiliates a royalty-free, nonexclusive, sublicensable, assignable, transferable, irrevocable, perpetual, world-wide license in and to any applicable Intellectual Property Rights of Vendor."
+          "3.29 Ownership of Paid-For Development, Use and Reservation of Rights (b) License Grant to AT&T. Vendor hereby grants and promises to grant and have granted to AT&T and its Affiliates a royalty-free, nonexclusive, sublicensable, assignable, transferable, irrevocable, perpetual, world-wide license in and to any applicable Intellectual Property Rights of Vendor to use, copy, modify, distribute, display, perform, import, make, sell, offer to sell, and exploit (and have others do any of the foregoing on or for AT&T’s or any of its customers’ behalf or benefit) any Intellectual Property Rights of Vendor or any third party that are not included in Material or Paid-For Development but necessary to operate the Cell Sites or receive the full benefit of the Work."
         ]
       },
       {
@@ -144,7 +145,7 @@
         "clause_type": "Irrevocable Or Perpetual License",
         "exists": true,
         "excerpts": [
-          "Vendor hereby grants and promises to grant and have granted to AT&T and its Affiliates a royalty-free, nonexclusive, sublicensable, assignable, transferable, irrevocable, perpetual, world-wide license in and to any applicable Intellectual Property Rights of Vendor."
+          "3.29 Ownership of Paid-For Development, Use and Reservation of Rights (b) License Grant to AT&T. Vendor hereby grants and promises to grant and have granted to AT&T and its Affiliates a royalty-free, nonexclusive, sublicensable, assignable, transferable, irrevocable, perpetual, world-wide license in and to any applicable Intellectual Property Rights of Vendor to use, copy, modify, distribute, display, perform, import, make, sell, offer to sell, and exploit (and have others do any of the foregoing on or for AT&T’s or any of its customers’ behalf or benefit) any Intellectual Property Rights of Vendor or any third party that are not included in Material or Paid-For Development but necessary to operate the Cell Sites or receive the full benefit of the Work."
         ]
       },
       {
@@ -156,14 +157,14 @@
         "clause_type": "Post-Termination Services",
         "exists": true,
         "excerpts": [
-          "Vendor also agrees to assist AT&T in coordinating the transfer of the provision of the Services to a successor contractor, which shall include continuing to provide the required level of Services until the date of expiration or termination and providing the successor contractor with all pertinent information about the Services."
+          "3.37 Termination and Suspension (h) Obligations upon Expiration or Termination - Upon expiration or termination of this Agreement, but prior to the effectiveness of full termination of the Agreement, AT&T may exercise any rights and remedies available to AT&T under this Agreement, at law or in equity, including AT&T’s right to exercise any one or more of the Termination Remedies set forth in the Build Addendum, and Vendor shall, upon the request and at the expense (other than termination in accordance with Subsection (c) hereof) of AT&T: (i) return all papers, materials, equipment, assets and property of AT&T held by Vendor, including title and ownership to all Material, (ii) provide reasonable assistance as may be necessary for the orderly, non-disrupted continuation of the Services, (iii) transfer all of the contracts related to the Cell Sites to AT&T as contemplated in the Build Addendum and (iv) reimburse AT&T for any AT&T Provided Equipment or other assets that are not installed at a Cell Site and cannot be returned in good working order (based on the acquisition costs plus taxes and shipping costs). Vendor also agrees to assist AT&T in coordinating the transfer of the provision of the Services to a successor contractor, which shall include continuing to provide the required level of Services until the date of expiration or termination and providing the successor contractor with all pertinent information about the Services."
         ]
       },
       {
         "clause_type": "Audit Rights",
         "exists": true,
         "excerpts": [
-          "AT&T and its auditors (including internal audit staff and external auditors) and governmental authorities shall have the right to review such records (“AT&T Audits”) held and created by Vendor."
+          "3.31 Records and Audits (a) Vendor shall maintain complete and accurate records relating to the Work and the performance of this Agreement. AT&T and its auditors (including internal audit staff and external auditors) and governmental authorities shall have the right to review such records (“AT&T Audits”) held and created by Vendor, to verify the following: (i) the accuracy of Vendor’s invoices and AT&T’s payment obligations hereunder; (ii) that the Work charged for was actually performed; (iii) that the Services have been and are being provided in accordance with this Agreement; (iv) the integrity of Vendor’s systems that process, store, support, maintain, and transmit AT&T data; (v) Vendor’s records relating to the performance of Vendor’s Subcontractors with respect to any portion of the Services; and (vi) that Vendor and its Subcontractors are complying with Section 3.6 hereof."
         ]
       },
       {
@@ -185,14 +186,14 @@
         "clause_type": "Warranty Duration",
         "exists": true,
         "excerpts": [
-          "The warranty period for all Material (excluding AT&T Provided Equipment) shall commence upon Delivery of such Material to Vendor from the OEM and shall continue for a period equal to the longer of (i) [***] or (ii) the applicable warranty period actually received by Vendor from the OEM for such Material Vendor acquired directly from the OEM."
+          "3.45 Warranty (a) The warranty period for all Material (excluding AT&T Provided Equipment) shall commence upon Delivery of such Material to Vendor from the OEM and shall continue for a period equal to the longer of (i) [***] or (ii) the applicable warranty period actually received by Vendor from the OEM for such Material Vendor acquired directly from the OEM, including the Vendor Provided Equipment as defined in the Build Addendum (the “Material Warranty Period”). Vendor provides no warranty for Material with respect to any AT&T Provided Equipment. The warranty period for workmanship and all Services provided hereunder, including the Build Services contemplated in the Build Addendum, shall commence upon Location Acceptance of the applicable Cell Site and continue for a period equal to [***] from Location Acceptance of the applicable Cell Site (the “Workmanship Warranty Period”)."
         ]
       },
       {
         "clause_type": "Insurance",
         "exists": true,
         "excerpts": [
-          "Vendor shall at its sole cost and expense: (i) maintain the insurance coverages and limits required by this Section and any additional insurance and/or bonds required by Laws."
+          "3.18 Insurance (a) With respect to Vendor’s performance under this Agreement, and in addition to Vendor’s obligation to indemnify, Vendor shall at its sole cost and expense: (i) maintain the insurance coverages and limits required by this Section and any additional insurance and/or bonds required by Laws: 1. at all times during the term of this Agreement and until completion of all Work associated with this Agreement, whichever is later; and 2. with respect to any coverage maintained in a “claims-made” policy, for two (2) years following the term of this Agreement or completion of all Work associated with this Agreement, whichever is later. If a “claims-made” policy is maintained, the retroactive date must precede the commencement of Work under this Agreement;"
         ]
       },
       {
@@ -204,7 +205,7 @@
         "clause_type": "Third Party Beneficiary",
         "exists": true,
         "excerpts": [
-          "All AT&T Affiliates receiving Material or Services under this Agreement and the federal government of the United States shall be express third party beneficiaries under this Agreement."
+          "3.39 Third Party Beneficiaries . All AT&T Affiliates receiving Material or Services under this Agreement and the federal government of the United States shall be express third party beneficiaries under this Agreement. Except to the extent expressly set forth to the contrary in this Agreement (including with respect to Affiliates of AT&T and the U.S. Government), there are no third party beneficiaries of this Agreement, and this Agreement shall not provide any third Person other than AT&T Affiliates and the U.S. Government with any remedy, claim, liability, reimbursement, claim of action or other legal or equitable right in excess of those existing without reference to this Agreement."
         ]
       }
     ]

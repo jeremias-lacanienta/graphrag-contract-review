@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")"
 
 # Activate the virtual environment
-source .venv/bin/activate
+source .venv_graphrag/bin/activate
 
 # Install Azure OpenAI and required packages
 echo "Installing required packages..."
@@ -47,7 +47,7 @@ echo "=== Starting Contract Ingestion Process with Azure OpenAI ==="
 
 # Step 1: Convert PDFs to JSON
 echo "Step 1: Converting PDF contracts to JSON using Azure OpenAI..."
-python convert-pdf-to-json-azure.py
+python src/convert-pdf-to-json-azure.py
 if [ $? -ne 0 ]; then
   echo "Error: PDF to JSON conversion failed"
   exit 1
@@ -56,7 +56,7 @@ echo "✓ PDF conversion complete"
 
 # Step 2: Import JSON into Neo4j Knowledge Graph
 echo "Step 2: Creating knowledge graph in Neo4j using Azure OpenAI..."
-python create_graph_from_json_azure.py
+python src/create_graph_from_json_azure.py
 if [ $? -ne 0 ]; then
   echo "Error: Knowledge graph creation failed"
   exit 1

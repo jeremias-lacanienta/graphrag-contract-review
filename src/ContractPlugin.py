@@ -1,9 +1,15 @@
 
 
 from typing import List, Optional, Annotated
+import os
+import sys
+
+# Add the parent directory to sys.path to enable imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from AgreementSchema import Agreement, ClauseType
 from semantic_kernel.functions import kernel_function
-from ContractService import  ContractSearchService
+from ContractService import ContractSearchService
 
 
 class ContractPlugin:

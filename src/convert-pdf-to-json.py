@@ -1,10 +1,15 @@
 import os
 import json
+import sys
 from openai import OpenAI
 from openai.types.beta.threads.message_create_params import (
     Attachment,
     AttachmentToolFileSearch,
 )
+
+# Add the parent directory to sys.path to enable imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from Utils import read_text_file, save_json_string_to_file, extract_json_from_string
 import re
 

@@ -1,8 +1,12 @@
 from neo4j import GraphDatabase
 import json
 import os
+import sys
 from openai import AzureOpenAI
 from dotenv import load_dotenv
+
+# Add the parent directory to sys.path to enable imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Load environment variables
 load_dotenv()

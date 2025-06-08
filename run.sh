@@ -17,12 +17,12 @@ run_command() {
     local args="$3"
     
     echo -e "${YELLOW}${title}${NC}"
-    echo -e "${BLUE}Command:${NC} python app_graphrag.py ${command} ${args}"
+    echo -e "${BLUE}Command:${NC} python src/app_graphrag.py ${command} ${args}"
     echo -e "${BLUE}Running...${NC}\n"
     
     # Run the command and capture its output, preserving the exit code
     # Use eval to ensure quotes are properly interpreted
-    result=$(eval "python app_graphrag.py ${command} ${args}" 2>&1)
+    result=$(eval "python src/app_graphrag.py ${command} ${args}" 2>&1)
     exit_code=$?
     
     if [ $exit_code -eq 0 ]; then

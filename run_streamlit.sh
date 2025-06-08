@@ -26,7 +26,7 @@ if [ -d ".venv_graphrag" ]; then
     echo -e "${SEPARATOR}"
     
     # Run the Streamlit app
-    streamlit run app_streamlit.py
+    streamlit run src/app_streamlit.py
     
     # Deactivate the virtual environment when done
     deactivate

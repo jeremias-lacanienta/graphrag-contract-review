@@ -2,10 +2,15 @@ import os
 import json
 import time
 import PyPDF2
+import sys
 from dotenv import load_dotenv
 from openai import AzureOpenAI
-from Utils import read_text_file, save_json_string_to_file, extract_json_from_string
 import re
+
+# Add the parent directory to sys.path to enable imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from Utils import read_text_file, save_json_string_to_file, extract_json_from_string
 
 # Load environment variables from .env file
 load_dotenv()

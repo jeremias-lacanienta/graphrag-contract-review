@@ -8,11 +8,15 @@ without semantic-kernel dependencies.
 import os
 import sys
 import json
-from ContractService import ContractSearchService
-from AgreementSchema import ClauseType
 import asyncio
 import logging
 from typing import Any, Dict, List, Union
+
+# Add the parent directory to sys.path to enable imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from ContractService import ContractSearchService
+from AgreementSchema import ClauseType
 
 from dotenv import load_dotenv
 load_dotenv()
