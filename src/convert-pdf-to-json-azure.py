@@ -36,8 +36,8 @@ client = AzureOpenAI(
 )
 
 # Load the system instruction and extraction prompt
-system_instruction = read_text_file('./prompts/system_prompt.txt')
-extraction_prompt = read_text_file('./prompts/contract_extraction_prompt.txt')
+system_instruction = read_text_file('../prompts/system_prompt.txt')
+extraction_prompt = read_text_file('../prompts/contract_extraction_prompt.txt')
 
 def process_pdf(pdf_filename):
     print(f"Processing {pdf_filename}...")
@@ -83,14 +83,14 @@ def process_pdf(pdf_filename):
 
 def main():
     # Create necessary directories if they don't exist
-    os.makedirs('./data/debug', exist_ok=True)
-    os.makedirs('./data/output', exist_ok=True)
+    os.makedirs('../data/debug', exist_ok=True)
+    os.makedirs('../data/output', exist_ok=True)
     
     # Get list of PDF files
-    pdf_files = [filename for filename in os.listdir('./data/input/') if filename.endswith('.pdf')]
+    pdf_files = [filename for filename in os.listdir('../data/input/') if filename.endswith('.pdf')]
     
     if not pdf_files:
-        print("No PDF files found in ./data/input/ directory")
+        print("No PDF files found in ../data/input/ directory")
         return
     
     print(f"Found {len(pdf_files)} PDF files to process")
@@ -100,16 +100,16 @@ def main():
             print(f"\nProcessing {pdf_filename}...")
             
             # Extract content from PDF
-            complete_response = process_pdf(f'./data/input/{pdf_filename}')
+            complete_response = process_pdf(f'../data/input/{pdf_filename}')
             
             # Log the complete response for debugging
-            save_json_string_to_file(complete_response, f'./data/debug/complete_response_{pdf_filename}.json')
+            save_json_string_to_file(complete_response, f'../data/debug/complete_response_{pdf_filename}.json')
             
             # Try to load the response as valid JSON
             try:
                 contract_json = extract_json_from_string(complete_response)
                 json_string = json.dumps(contract_json, indent=4)
-                save_json_string_to_file(json_string, f'./data/output/{pdf_filename}.json')
+                save_json_string_to_file(json_string, f'../data/output/{pdf_filename}.json')
                 print(f"Successfully extracted and saved JSON for {pdf_filename}")
             except json.JSONDecodeError as e:
                 print(f"Failed to decode JSON: {e}")

@@ -25,8 +25,10 @@ if [ -d ".venv_graphrag" ]; then
     echo -e "${BLUE}Access the web interface at ${GREEN}http://localhost:8501${NC}"
     echo -e "${SEPARATOR}"
     
-    # Run the Streamlit app
-    streamlit run src/app_streamlit.py
+    # Run the Streamlit app (change directory to src first)
+    cd src
+    streamlit run app_streamlit.py
+    cd ..
     
     # Deactivate the virtual environment when done
     deactivate

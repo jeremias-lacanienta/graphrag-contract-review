@@ -36,7 +36,9 @@ chmod +x src/log_viewer.py
 
 # Run the log viewer on a different port than the main app
 echo "Starting Log Viewer in a new window..."
-streamlit run src/log_viewer.py --server.port=8502 --server.headless=true
+cd src
+streamlit run log_viewer.py --server.port=8502 --server.headless=true
+cd ..
 
 # Deactivate virtual environment when done
 # This will only happen after the user closes the Streamlit app

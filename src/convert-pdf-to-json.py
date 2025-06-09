@@ -18,8 +18,8 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Load the system instruction and extraction prompt
-system_instruction = read_text_file('./prompts/system_prompt.txt')
-extraction_prompt = read_text_file('./prompts/contract_extraction_prompt.txt')
+system_instruction = read_text_file('../prompts/system_prompt.txt')
+extraction_prompt = read_text_file('../prompts/contract_extraction_prompt.txt')
 
 # Configure the assistant
 pdf_assistant = client.beta.assistants.create(
@@ -60,20 +60,20 @@ def process_pdf(pdf_filename):
     return messages[0].content[0].text.value
 
 def main():
-    pdf_files = [filename for filename in os.listdir('./data/input/') if filename.endswith('.pdf')]
+    pdf_files = [filename for filename in os.listdir('../data/input/') if filename.endswith('.pdf')]
     
     for pdf_filename in pdf_files:
         print('Processing ' + pdf_filename + '...')    
         # Extract content from PDF using the assistant
-        complete_response = process_pdf('./data/input/' + pdf_filename)
+        complete_response = process_pdf('../data/input/' + pdf_filename)
         # Log the complete response to debug
-        save_json_string_to_file(complete_response, './data/debug/complete_response_' + pdf_filename + '.json')
+        save_json_string_to_file(complete_response, '../data/debug/complete_response_' + pdf_filename + '.json')
         # Try to load the response as valid JSON
         try:
             contract_json = extract_json_from_string(complete_response)
             # Store as valid JSON so it can be imported into a KG later
             json_string = json.dumps(contract_json, indent=4)
-            save_json_string_to_file(json_string, './data/output/' + pdf_filename + '.json')
+            save_json_string_to_file(json_string, '../data/output/' + pdf_filename + '.json')
         except json.JSONDecodeError as e:
             print(f"Failed to decode JSON: {e}")
 

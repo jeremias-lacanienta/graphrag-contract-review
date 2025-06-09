@@ -14,9 +14,6 @@ from typing import Any, Dict, List, Union
 import subprocess
 from dotenv import load_dotenv
 
-# Add the parent directory to sys.path to enable imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 # Import services
 from ContractService import ContractSearchService
 from AgreementSchema import ClauseType

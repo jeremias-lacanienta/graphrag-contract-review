@@ -156,7 +156,7 @@ def main():
     NEO4J_URI = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
     NEO4J_USER = os.getenv('NEO4J_USERNAME', 'neo4j')
     NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD')
-    JSON_CONTRACT_FOLDER = './data/output/'
+    JSON_CONTRACT_FOLDER = '../data/output/'
 
     if not NEO4J_PASSWORD:
         print("Neo4j password not found. Please set NEO4J_PASSWORD in your .env file")

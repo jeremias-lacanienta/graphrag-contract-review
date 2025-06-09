@@ -47,7 +47,8 @@ echo "=== Starting Contract Ingestion Process with Azure OpenAI ==="
 
 # Step 1: Convert PDFs to JSON
 echo "Step 1: Converting PDF contracts to JSON using Azure OpenAI..."
-python src/convert-pdf-to-json-azure.py
+cd src
+python convert-pdf-to-json-azure.py
 if [ $? -ne 0 ]; then
   echo "Error: PDF to JSON conversion failed"
   exit 1
@@ -56,12 +57,15 @@ echo "✓ PDF conversion complete"
 
 # Step 2: Import JSON into Neo4j Knowledge Graph
 echo "Step 2: Creating knowledge graph in Neo4j using Azure OpenAI..."
-python src/create_graph_from_json_azure.py
+python create_graph_from_json_azure.py
 if [ $? -ne 0 ]; then
   echo "Error: Knowledge graph creation failed"
   exit 1
 fi
 echo "✓ Knowledge graph creation complete"
+
+# Return to the root directory
+cd ..
 
 echo "=== Contract Ingestion Complete ==="
 echo "All contracts have been processed and loaded into Neo4j"

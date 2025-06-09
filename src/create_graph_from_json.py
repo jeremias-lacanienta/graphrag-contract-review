@@ -93,7 +93,7 @@ NEO4J_URI=os.getenv('NEO4J_URI', 'bolt://localhost:7687')
 NEO4J_USER=os.getenv('NEO4J_USERNAME', 'neo4j')
 NEO4J_PASSWORD=os.getenv('NEO4J_PASSWORD')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-JSON_CONTRACT_FOLDER = './data/output/'
+JSON_CONTRACT_FOLDER = '../data/output/'
 
 # Function to get the highest existing contract_id
 def get_max_contract_id(driver):
