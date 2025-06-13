@@ -25,6 +25,7 @@
 ## Don't Do
 - Do not modify any files outside of .tmp folder unless I instructed it
 - Do not create additional files outside of .tmp folder unless I instructed it
+- Do not create fallback behavior that is fixed  and will mask error
 
 ## Do
 - Do create any file for testing purposes or validation inside .tmp folder

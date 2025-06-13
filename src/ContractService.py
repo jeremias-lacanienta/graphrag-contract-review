@@ -1,269 +1,383 @@
-from neo4j import GraphDatabase
-from typing import List 
-import os
-import sys
+"""
+Optimized Contract Service for handling tens of thousands of contracts efficiently.
+Designed to support complex multi-node traversal queries without loading all data into memory.
 
-from AgreementSchema import Agreement, ClauseType,Party, ContractClause
-from neo4j_graphrag.retrievers import VectorCypherRetriever,Text2CypherRetriever
+NOTE: Run 'python initialize_optimizations.py' once before using this service
+      to ensure optimal database performance.
+"""
+from neo4j import GraphDatabase
+from typing import List, Dict, Any, Optional, Iterator, Tuple
+import os
+import time
+import hashlib
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from enum import Enum
+
+# Suppress Neo4j notification messages
+logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
+
+# Environment variables should be loaded by the application that uses this service
+
+# Import existing schemas and dependencies
+from AgreementSchema import Agreement, ClauseType, Party, ContractClause
+from neo4j_graphrag.retrievers import VectorCypherRetriever, Text2CypherRetriever
 from neo4j_graphrag.embeddings import OpenAIEmbeddings
 from formatters import my_vector_search_excerpt_record_formatter
 from neo4j_graphrag.llm import OpenAILLM
 
 
+class QueryOptimizationLevel(Enum):
+    """Defines different levels of query optimization for large datasets"""
+    BASIC = "basic"
+    AGGREGATED = "aggregated"
+    STREAMING = "streaming"
+    DISTRIBUTED = "distributed"
 
-class ContractSearchService:
-    def __init__(self, uri, user ,pwd ):
-        driver = GraphDatabase.driver(uri, auth=(user, pwd))
-        self._driver = driver
-        self._openai_embedder = OpenAIEmbeddings(model = "text-embedding-3-small")
-        # Create LLM object. Used to generate the CYPHER queries
-        self._llm = OpenAILLM(model_name="gpt-4o", model_params={"temperature": 0}) 
-        
+
+@dataclass
+class QueryResult:
+    """Structured result container for optimized queries"""
+    data: List[Dict[str, Any]]
+    total_count: int
+    execution_time: float
+    optimization_level: QueryOptimizationLevel
+    query_hash: Optional[str] = None
+
+
+class ContractService:
+    """
+    High-performance contract service optimized for large-scale datasets.
     
-    async def get_contract(self, contract_id: int) -> Agreement:
-        
-        GET_CONTRACT_BY_ID_QUERY = """
-            MATCH (a:Agreement {contract_id: $contract_id})-[:HAS_CLAUSE]->(clause:ContractClause)
-            WITH a, collect(clause) as clauses
-            MATCH (country:Country)-[i:INCORPORATED_IN]-(p:Organization)-[r:IS_PARTY_TO]-(a)
-            WITH a, clauses, collect(p) as parties, collect(country) as countries, collect(r) as roles, collect(i) as states
-            RETURN a as agreement, clauses, parties, countries, roles, states
-        """
-        
-        agreement_node = {}
-       
-        records, _, _  = self._driver.execute_query(GET_CONTRACT_BY_ID_QUERY,{'contract_id':contract_id})
-        
-        # Return empty agreement if no records found
-        if not records or len(records) == 0: return {}
-
-        agreement_node =    records[0].get('agreement')
-        party_list =        records[0].get('parties')
-        role_list =         records[0].get('roles')
-        country_list =      records[0].get('countries')
-        state_list =        records[0].get('states')
-        clause_list =       records[0].get('clauses')
-        
-        return await self._get_agreement(
-            agreement_node, format="long",
-            party_list=party_list, role_list=role_list,
-            country_list=country_list,state_list=state_list,
-            clause_list=clause_list
-        )
-
-    async def get_contracts(self, organization_name: str) -> List[Agreement]:
-        GET_CONTRACTS_BY_PARTY_NAME = """
-            CALL db.index.fulltext.queryNodes('organizationNameTextIndex', $organization_name)
-            YIELD node AS o, score
-            WITH o, score
-            ORDER BY score DESC
-            LIMIT 1
-            WITH o
-            MATCH (o)-[:IS_PARTY_TO]->(a:Agreement)
-            WITH a
-            MATCH (country:Country)-[i:INCORPORATED_IN]-(p:Organization)-[r:IS_PARTY_TO]-(a:Agreement)
-            RETURN a as agreement, collect(p) as parties, collect(r) as roles, collect(country) as countries, collect(i) as states
-        """
-       
-        #run the Cypher query
-        records, _ , _ = self._driver.execute_query(GET_CONTRACTS_BY_PARTY_NAME,{'organization_name':organization_name})
-
-        #Build the result
-        all_aggrements = []
-        for row in records:
-            agreement_node =  row['agreement']
-            party_list =  row['parties']
-            role_list =  row['roles']
-            country_list = row['countries']
-            state_list = row['states']
-            
-            agreement : Agreement = await self._get_agreement(
-                format="short",
-                agreement_node=agreement_node,
-                party_list=party_list,
-                role_list=role_list,
-                country_list=country_list,
-                state_list=state_list
-            )
-            all_aggrements.append(agreement)
-        
-        return all_aggrements
-
-    async def get_contracts_with_clause_type(self, clause_type: ClauseType) -> List[Agreement]:
-        GET_CONTRACT_WITH_CLAUSE_TYPE_QUERY = """
-            MATCH (a:Agreement)-[:HAS_CLAUSE]->(cc:ContractClause {type: $clause_type})
-            WITH a
-            MATCH (country:Country)-[i:INCORPORATED_IN]-(p:Organization)-[r:IS_PARTY_TO]-(a:Agreement)
-            RETURN a as agreement, collect(p) as parties, collect(r) as roles, collect(country) as countries, collect(i) as states
-            
-        """
-
-        # Fix: Check if clause_type is a string or an enum
-        if hasattr(clause_type, 'value'):
-            # It's an enum, get its value
-            clause_type_value = str(clause_type.value)
-        else:
-            # It's already a string
-            clause_type_value = str(clause_type)
-
-        #run the Cypher query
-        records, _ , _ = self._driver.execute_query(GET_CONTRACT_WITH_CLAUSE_TYPE_QUERY,{'clause_type': clause_type_value})
-        # Process the results
-        
-        all_agreements = []
-        for row in records:
-            agreement_node =  row['agreement']
-            party_list =  row['parties']
-            role_list =  row['roles']
-            country_list = row['countries']
-            state_list = row['states']
-            agreement : Agreement = await self._get_agreement(
-                format="short",
-                agreement_node=agreement_node,
-                party_list=party_list,
-                role_list=role_list,
-                country_list=country_list,
-                state_list=state_list
-            )
-            
-            all_agreements.append(agreement)
-        
-        return all_agreements
-        
-    async def get_contracts_without_clause(self, clause_type: ClauseType) -> List[Agreement]:
-        GET_CONTRACT_WITHOUT_CLAUSE_TYPE_QUERY = """
-            MATCH (a:Agreement)
-            OPTIONAL MATCH (a)-[:HAS_CLAUSE]->(cc:ContractClause {type: $clause_type})
-            WITH a,cc
-            WHERE cc is NULL
-            WITH a
-            MATCH (country:Country)-[i:INCORPORATED_IN]-(p:Organization)-[r:IS_PARTY_TO]-(a)
-            RETURN a as agreement, collect(p) as parties, collect(r) as roles, collect(country) as countries, collect(i) as states
-        """
-       
-        # Fix: Check if clause_type is a string or an enum
-        if hasattr(clause_type, 'value'):
-            # It's an enum, get its value
-            clause_type_value = str(clause_type.value)
-        else:
-            # It's already a string
-            clause_type_value = str(clause_type)
-            
-        #run the Cypher query
-        records, _ , _ = self._driver.execute_query(GET_CONTRACT_WITHOUT_CLAUSE_TYPE_QUERY,{'clause_type': clause_type_value})
-
-        all_agreements = []
-        for row in records:
-            agreement_node =  row['agreement']
-            party_list =  row['parties']
-            role_list =  row['roles']
-            country_list = row['countries']
-            state_list = row['states']
-            agreement : Agreement = await self._get_agreement(
-                format="short",
-                agreement_node=agreement_node,
-                party_list=party_list,
-                role_list=role_list,
-                country_list=country_list,
-                state_list=state_list
-            )
-            all_agreements.append(agreement)
-        return all_agreements
-
-    async def get_contracts_similar_text(self, clause_text: str) -> List[Agreement]:
-
-
-        #Cypher to traverse from the semantically similar excerpts back to the agreement
-        EXCERPT_TO_AGREEMENT_TRAVERSAL_QUERY="""
-            MATCH (a:Agreement)-[:HAS_CLAUSE]->(cc:ContractClause)-[:HAS_EXCERPT]-(node) 
-            RETURN a.name as agreement_name, a.contract_id as contract_id, cc.type as clause_type, node.text as excerpt
-        """
-        
-        #Set up vector Cypher retriever
-        retriever = VectorCypherRetriever(
-            driver= self._driver,  
-            index_name="excerpt_embedding",
-            embedder=self._openai_embedder, 
-            retrieval_query=EXCERPT_TO_AGREEMENT_TRAVERSAL_QUERY,
-            result_formatter=my_vector_search_excerpt_record_formatter
-        )
-        
-        # run vector search query on excerpts and get results containing the relevant agreement and clause 
-        retriever_result = retriever.search(query_text=clause_text, top_k=3)
-
-        #set up List of Agreements (with partial data) to be returned
-        agreements = []
-        for item in retriever_result.items:
-            content = item.content
-            a : Agreement = {
-                'name': content['agreement_name'],  # Changed key to match template expectation
-                'contract_id': content['contract_id']
-            }
-            c : ContractClause = {
-                "type": content['clause_type'],  # Changed key to match template expectation
-                "excerpts" : [content['excerpt']]
-            }            
-            a['clauses'] = [c]
-            agreements.append(a)
-
-        return agreements
+    Key optimizations:
+    - Streaming queries to avoid memory overload
+    - Aggregation-first approach for complex traversals
+    - Query result caching
+    - Parallel execution for independent queries
+    - Smart indexing recommendations
+    """
     
-    async def answer_aggregation_question(self, user_question: str) -> str:
-        """
-        Answer a question about the agreements by aggregating data from the knowledge graph.
+    def __init__(self, uri: str, user: str, pwd: str, max_memory_contracts: int = 1000):
+        self.driver = GraphDatabase.driver(uri, auth=(user, pwd))
+        self.max_memory_contracts = max_memory_contracts
+        self._openai_embedder = OpenAIEmbeddings(model="text-embedding-3-small")
+        self._llm = OpenAILLM(model_name="gpt-4o", model_params={"temperature": 0})
         
-        Args:
-            user_question: The question asked by the user
+        # Query cache for expensive operations
+        self._query_cache: Dict[str, QueryResult] = {}
+        self._cache_ttl = 300  # 5 minutes
+        
+        # Performance monitoring
+        self._query_stats = {}
+        
+        # Create recommended indexes on startup
+        self._ensure_optimal_indexes()
+    
+    def _ensure_optimal_indexes(self):
+        """Create indexes optimized for complex traversal queries"""
+        recommended_indexes = [
+            # Core entity indexes
+            "CREATE INDEX agreement_contract_id IF NOT EXISTS FOR (a:Agreement) ON (a.contract_id)",
+            "CREATE INDEX organization_name IF NOT EXISTS FOR (o:Organization) ON (o.name)",
+            "CREATE INDEX clause_type IF NOT EXISTS FOR (c:ContractClause) ON (c.type)",
+            "CREATE INDEX country_name IF NOT EXISTS FOR (c:Country) ON (c.name)",
             
-        Returns:
-            A natural language answer to the question
-        """
-        try:
-            # Attempt a sophisticated RAG approach first
+            # Relationship-specific indexes
+            "CREATE INDEX party_role IF NOT EXISTS FOR ()-[r:IS_PARTY_TO]-() ON (r.role)",
+            "CREATE INDEX governing_state IF NOT EXISTS FOR ()-[r:GOVERNED_BY_LAW]-() ON (r.state)",
+            "CREATE INDEX incorporation_state IF NOT EXISTS FOR ()-[r:INCORPORATED_IN]-() ON (r.state)",
+            
+            # Composite indexes for complex queries
+            "CREATE INDEX agreement_type_date IF NOT EXISTS FOR (a:Agreement) ON (a.agreement_type, a.effective_date)",
+            
+            # Full-text search indexes
+            "CREATE FULLTEXT INDEX excerpt_text IF NOT EXISTS FOR (e:Excerpt) ON EACH [e.text]",
+            "CREATE FULLTEXT INDEX clause_search IF NOT EXISTS FOR (c:ContractClause) ON EACH [c.text, c.type]",
+            "CREATE FULLTEXT INDEX organizationNameTextIndex IF NOT EXISTS FOR (o:Organization) ON EACH [o.name]",
+            
+            # Vector indexes for embeddings
+            "CREATE VECTOR INDEX excerpt_embedding IF NOT EXISTS FOR (e:Excerpt) ON (e.embedding) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`:'cosine'}}"
+        ]
+        
+        for index_query in recommended_indexes:
             try:
-                # First try a direct query for relevant contract clauses
-                CLAUSE_SEARCH_QUERY = """
-                    MATCH (a:Agreement)-[:HAS_CLAUSE]->(cc:ContractClause)
-                    WHERE toLower(cc.text) CONTAINS toLower($search_text) 
-                       OR toLower(cc.type) CONTAINS toLower($search_text)
-                    RETURN cc.text as text, cc.type as type, a.name as agreement_name,
-                           a.contract_id as contract_id
-                    LIMIT 5
-                """
-                # Extract key terms from the question (simple approach)
-                search_terms = [word for word in user_question.lower().split() 
-                              if len(word) > 4 and word not in [
-                                  'what', 'where', 'when', 'which', 'whose', 'about', 
-                                  'there', 'their', 'these', 'those', 'that', 'this'
-                              ]]
-                # Use the first 3 substantive words for the search
-                search_text = ' '.join(search_terms[:3]) if search_terms else user_question
-                # Execute the search query
-                records, _, _ = self._driver.execute_query(
-                    CLAUSE_SEARCH_QUERY, 
-                    {'search_text': search_text}
-                )
-                # Process the results if any
-                if records and len(records) > 0:
-                    answer = "Here are the relevant contract clauses that might answer your question:\n\n"
-                    for record in records:
-                        agreement_name = record.get('agreement_name', 'Unknown Agreement')
-                        contract_id = record.get('contract_id', 'Unknown')
-                        clause_type = record.get('type', 'Unknown Type')
-                        clause_text = record.get('text', 'No text available')
-                        answer += f"From {agreement_name} (Contract ID: {contract_id}):\n"
-                        answer += f"Clause type: {clause_type}\n"
-                        answer += f"Text: {clause_text}\n\n"
-                    return answer
+                self.driver.execute_query(index_query)
             except Exception as e:
-                # Log the error but continue with other approaches
-                print(f"Error in direct clause search: {str(e)}")
+                print(f"Index creation warning: {e}")
+    
+    def health_check(self) -> Dict[str, Any]:
+        """Perform a health check of the database and service"""
+        try:
+            # Test database connectivity
+            result = self.driver.execute_query("RETURN 'connected' as status")
+            
+            # Get basic database statistics
+            node_count_query = """
+            MATCH (n) 
+            RETURN count(n) as total_nodes
+            """
+            node_result, _, _ = self.driver.execute_query(node_count_query)
+            total_nodes = node_result[0]['total_nodes'] if node_result else 0
+            
+            # Check for indexes
+            index_query = "SHOW INDEXES YIELD name"
+            index_result, _, _ = self.driver.execute_query(index_query)
+            active_indexes = len(index_result) if index_result else 0
+            
+            return {
+                'status': 'healthy',
+                'total_nodes': total_nodes,
+                'active_indexes': active_indexes,
+                'cache_size': len(self._query_cache),
+                'query_categories_tracked': len(self._query_stats)
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'total_nodes': 'unknown',
+                'active_indexes': 'unknown'
+            }
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics for queries"""
+        if not self._query_stats:
+            return {
+                'total_queries': 0,
+                'average_execution_time': 0.0,
+                'categories': {}
+            }
+        
+        # Calculate overall statistics
+        all_times = []
+        category_stats = {}
+        
+        for category, times in self._query_stats.items():
+            if times:
+                category_stats[category] = {
+                    'count': len(times),
+                    'average_time': sum(times) / len(times),
+                    'min_time': min(times),
+                    'max_time': max(times)
+                }
+                all_times.extend(times)
+        
+        return {
+            'total_queries': len(all_times),
+            'average_execution_time': sum(all_times) / len(all_times) if all_times else 0.0,
+            'categories': category_stats,
+            'cache_hits': len(self._query_cache)
+        }
+
+    def close(self):
+        """Clean up resources"""
+        self.driver.close()
+    
+    # ==================== DYNAMIC QUERY OPTIMIZATION METHODS ====================
+    
+    def optimize_query_for_scale(self, original_query: str, estimated_result_size: int = None) -> str:
+        """
+        Dynamically optimize any Cypher query for large-scale datasets
+        """
+        optimized_query = original_query
+        
+        # Add LIMIT if not present and result size might be large
+        if "LIMIT" not in optimized_query.upper():
+            if estimated_result_size is None or estimated_result_size > 1000:
+                optimized_query += " LIMIT 1000"
+        
+        # Optimize aggregations - prefer COLLECT over multiple RETURN statements
+        if "RETURN" in optimized_query and optimized_query.count("RETURN") == 1:
+            # Look for patterns that can be aggregated
+            if "MATCH" in optimized_query and optimized_query.count("MATCH") > 2:
+                # This is a complex multi-match query, add aggregation hints
+                optimized_query = optimized_query.replace(
+                    "RETURN", 
+                    "WITH collect(DISTINCT {}) as aggregated_data\nRETURN aggregated_data,\n       size(aggregated_data) as total_count,\n      "
+                )
+        
+        return optimized_query
+    
+    def execute_streaming_query(self, query: str, parameters: Dict = None, batch_size: int = 100) -> Iterator[Dict[str, Any]]:
+        """
+        Execute any query in streaming fashion for large datasets
+        """
+        # Add pagination to the query if not present
+        if "SKIP" not in query.upper() or "LIMIT" not in query.upper():
+            if "ORDER BY" in query.upper():
+                # Insert SKIP/LIMIT before any trailing clauses
+                query = query.replace("ORDER BY", "ORDER BY") + "\nSKIP $skip LIMIT $limit"
+            else:
+                query += "\nSKIP $skip LIMIT $limit"
+        
+        parameters = parameters or {}
+        skip = 0
+        
+        while True:
+            current_params = {**parameters, "skip": skip, "limit": batch_size}
+            
+            try:
+                records, _, _ = self.driver.execute_query(query, current_params)
                 
-            # Define the Neo4j schema to help the LLM generate accurate queries
+                if not records:
+                    break
+                
+                for record in records:
+                    yield dict(record)
+                
+                if len(records) < batch_size:
+                    break
+                    
+                skip += batch_size
+                
+            except Exception as e:
+                print(f"Streaming query error at skip={skip}: {e}")
+                break
+    
+    def estimate_query_complexity(self, query: str) -> Dict[str, Any]:
+        """
+        Analyze query complexity to choose optimal execution strategy
+        """
+        query_upper = query.upper()
+        
+        complexity_score = 0
+        complexity_factors = {}
+        
+        # Count different types of operations
+        match_count = query_upper.count("MATCH")
+        optional_match_count = query_upper.count("OPTIONAL MATCH")
+        with_count = query_upper.count("WITH")
+        collect_count = query_upper.count("COLLECT")
+        unwind_count = query_upper.count("UNWIND")
+        
+        complexity_factors["match_operations"] = match_count
+        complexity_factors["optional_matches"] = optional_match_count
+        complexity_factors["with_clauses"] = with_count
+        complexity_factors["collections"] = collect_count
+        complexity_factors["unwinds"] = unwind_count
+        
+        # Calculate complexity score
+        complexity_score += match_count * 2
+        complexity_score += optional_match_count * 3  # Optional matches are more expensive
+        complexity_score += with_count * 1
+        complexity_score += collect_count * 2
+        complexity_score += unwind_count * 4  # Unwinds can be very expensive
+        
+        # Check for potentially expensive patterns
+        if "EXISTS {" in query:
+            complexity_score += 5
+            complexity_factors["exists_subqueries"] = query.count("EXISTS {")
+        
+        if any(keyword in query_upper for keyword in ["ALL(", "ANY(", "NONE(", "SINGLE("]):
+            complexity_score += 3
+            complexity_factors["list_predicates"] = True
+        
+        # Determine recommended strategy
+        if complexity_score <= 5:
+            strategy = QueryOptimizationLevel.BASIC
+        elif complexity_score <= 15:
+            strategy = QueryOptimizationLevel.AGGREGATED
+        elif complexity_score <= 30:
+            strategy = QueryOptimizationLevel.STREAMING
+        else:
+            strategy = QueryOptimizationLevel.DISTRIBUTED
+        
+        return {
+            "complexity_score": complexity_score,
+            "factors": complexity_factors,
+            "recommended_strategy": strategy
+        }
+    
+    # ==================== AGGREGATION AND ANALYTICS METHODS ====================
+    
+    def get_contract_statistics(self) -> Dict[str, Any]:
+        """Get high-level statistics without loading all contracts"""
+        stats_query = """
+        // Contract counts and types
+        MATCH (a:Agreement)
+        WITH count(a) as total_contracts,
+             collect(DISTINCT a.agreement_type) as contract_types
+        
+        // Organization statistics
+        MATCH (o:Organization)
+        WITH total_contracts, contract_types, count(o) as total_organizations
+        
+        // Clause statistics  
+        MATCH (cl:ContractClause)-[:HAS_TYPE]->(ct:ClauseType)
+        WITH total_contracts, contract_types, total_organizations,
+             count(cl) as total_clauses,
+             count(DISTINCT ct.name) as unique_clause_types
+        
+        // Jurisdiction distribution
+        MATCH (c:Country)
+        WITH total_contracts, contract_types, total_organizations, 
+             total_clauses, unique_clause_types, count(c) as total_countries
+        
+        RETURN total_contracts, contract_types, total_organizations,
+               total_clauses, unique_clause_types, total_countries
+        """
+        
+        records, _, _ = self.driver.execute_query(stats_query)
+        return dict(records[0]) if records else {}
+    
+    def get_top_organizations_by_contract_count(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get organizations with most contracts without loading all data"""
+        query = """
+        MATCH (o:Organization)-[:IS_PARTY_TO]->(a:Agreement)
+        WITH o.name as organization, count(DISTINCT a) as contract_count,
+             collect(DISTINCT a.agreement_type) as contract_types
+        ORDER BY contract_count DESC
+        LIMIT $limit
+        RETURN organization, contract_count, contract_types
+        """
+        
+        records, _, _ = self.driver.execute_query(query, parameters={"limit": limit})
+        return [dict(record) for record in records]
+    
+    def analyze_clause_co_occurrence(self, min_frequency: int = 2) -> List[Dict[str, Any]]:
+        """Analyze which clause types frequently appear together"""
+        query = """
+        MATCH (a:Agreement)-[:HAS_CLAUSE]->(cl:ContractClause)-[:HAS_TYPE]->(ct:ClauseType)
+        WITH a, collect(DISTINCT ct.name) as clause_types
+        WHERE size(clause_types) >= 2
+        
+        UNWIND clause_types as ct1
+        UNWIND clause_types as ct2
+        WHERE ct1 < ct2  // Avoid duplicates and self-pairs
+        
+        WITH ct1, ct2, count(*) as co_occurrence_count
+        WHERE co_occurrence_count >= $min_frequency
+        ORDER BY co_occurrence_count DESC
+        
+        RETURN ct1 as clause_type_1, ct2 as clause_type_2, co_occurrence_count
+        """
+        
+        records, _, _ = self.driver.execute_query(
+            query, 
+            parameters={"min_frequency": min_frequency}
+        )
+        return [dict(record) for record in records]
+    
+    # ==================== ENHANCED SEARCH AND RETRIEVAL ====================
+    
+    async def answer_complex_aggregation_question(self, user_question: str) -> str:
+        """
+        Dynamically handle any complex question with intelligent optimization
+        """
+        # First try immediate pattern-based approach for better results
+        pattern_result = await self._try_pattern_based_approach(user_question)
+        if pattern_result and pattern_result != "No results found for the given query.":
+            return pattern_result
+        
+        try:
+            # Enhanced Neo4j schema with optimization hints
             NEO4J_SCHEMA = """
                 Node properties:
-                Agreement {agreement_type: STRING, contract_id: INTEGER, effective_date: STRING, renewal_term: STRING, name: STRING}
-                ContractClause {type: STRING}
+                Agreement {agreement_type: STRING, contract_id: INTEGER, effective_date: STRING, 
+                          renewal_term: STRING, name: STRING}
+                ContractClause {type: STRING, text: STRING}
                 ClauseType {name: STRING}
                 Country {name: STRING}
                 Excerpt {text: STRING}
@@ -282,341 +396,1063 @@ class ContractSearchService:
                 (:Agreement)-[:GOVERNED_BY_LAW]->(:Country)
                 (:Organization)-[:IS_PARTY_TO]->(:Agreement)
                 (:Organization)-[:INCORPORATED_IN]->(:Country)
+                
+                Performance Notes for Large Datasets:
+                - Always use LIMIT clauses (suggest LIMIT 1000 for complex queries)
+                - Prefer aggregation functions (count, collect) over returning large node sets
+                - Use EXISTS {} for complex filtering instead of large JOINs
+                - Use WITH clauses to pipeline complex queries and reduce memory usage
+                - For very complex multi-node traversals, consider using multiple smaller queries
+                - Use DISTINCT in COLLECT to avoid duplicates
+                - Add ORDER BY before LIMIT for consistent results
             """
-
-            # Initialize the Text2Cypher retriever with the schema
+            
+            # Initialize enhanced retriever
             text2cypher_retriever = Text2CypherRetriever(
                 llm=self._llm,
-                driver=self._driver,
+                driver=self.driver,
                 neo4j_schema=NEO4J_SCHEMA
             )
             
-            # Use the retriever to search (not retrieve) for the answer
+            # Execute the query with performance monitoring
+            start_time = time.time()
             result = text2cypher_retriever.search(query_text=user_question)
+            execution_time = time.time() - start_time
             
-            # Process the result
+            # Log performance for monitoring
+            self._query_stats[user_question[:50]] = {
+                'execution_time': execution_time,
+                'timestamp': time.time()
+            }
+            
+            # Process results efficiently
             if hasattr(result, 'items') and result.items:
-                records = result.items
-                
-                # Handle incorporation states question
-                if "incorporation" in user_question.lower() or "state" in user_question.lower():
-                    answer = "Incorporation states for the parties:\n\n"
-                    
-                    # Process each record
-                    for record in records:
-                        # Extract data using a simpler approach - convert the record to a string
-                        # and then extract the data we need using string processing
-                        record_str = str(record)
-                        
-                        # Extract organization name and state from the record string
-                        # Example format: "<Record Organization='Org Name' IncorporationState='State Name'>"
-                        org_name = None
-                        state_name = None
-                        
-                        if "Organization=" in record_str and "IncorporationState=" in record_str:
-                            # Extract organization name
-                            org_start = record_str.find("Organization='") + len("Organization='")
-                            org_end = record_str.find("'", org_start)
-                            if org_start > 0 and org_end > org_start:
-                                org_name = record_str[org_start:org_end]
-                            
-                            # Extract state name
-                            state_start = record_str.find("IncorporationState='") + len("IncorporationState='")
-                            state_end = record_str.find("'", state_start)
-                            if state_start > 0 and state_end > state_start:
-                                state_name = record_str[state_start:state_end]
-                        
-                        # Add formatted record to answer
-                        if org_name and state_name:
-                            answer += f"  - {org_name}: {state_name}\n"
-                    
-                    return answer
-                
-                # For other types of questions, provide a more generic format
-                else:
-                    answer = "Query results:\n\n"
-                    
-                    for record in records:
-                        # Just use the string representation but clean it up slightly
-                        record_str = str(record).replace("<Record ", "").replace(">", "").strip()
-                        answer += f"  - {record_str}\n"
-                    
-                    return answer
-                    
-            elif isinstance(result, dict) and "result" in result:
-                return result["result"]
+                return self._format_aggregation_result(result.items, user_question, execution_time)
+            
+            # If Text2Cypher didn't work, fall back to pattern-based approach
+            return await self._fallback_query_approach(user_question)
+            
+        except Exception as e:
+            print(f"Error in complex aggregation question: {str(e)}")
+            
+            # Fallback to optimized direct query approach
+            return await self._fallback_query_approach(user_question)
+    
+    async def _fallback_query_approach(self, user_question: str) -> str:
+        """
+        Fallback approach when Text2Cypher fails - use pattern matching and direct queries
+        """
+        try:
+            question_lower = user_question.lower()
+            
+            # Pattern-based query generation for common question types
+            if any(keyword in question_lower for keyword in ['incorporation', 'incorporated', 'state']):
+                return await self._handle_incorporation_questions(user_question)
+            
+            elif any(keyword in question_lower for keyword in ['clause', 'clauses', 'type', 'types']):
+                return await self._handle_clause_questions(user_question)
+            
+            elif any(keyword in question_lower for keyword in ['organization', 'party', 'parties', 'company']):
+                return await self._handle_organization_questions(user_question)
+            
+            elif any(keyword in question_lower for keyword in ['agreement', 'contract', 'contracts']):
+                return await self._handle_agreement_questions(user_question)
+            
+            elif any(keyword in question_lower for keyword in ['jurisdiction', 'governing', 'law']):
+                return await self._handle_jurisdiction_questions(user_question)
+            
+            elif any(keyword in question_lower for keyword in ['excerpt', 'text', 'content']):
+                return await self._handle_excerpt_questions(user_question)
+            
             else:
-                # Dynamic handling for agreement-specific queries
-                # Extract potential agreement names from the question
-                question_lower = user_question.lower()
-                
-                # First, query the database to get all available agreement names
-                try:
-                    AGREEMENT_NAMES_QUERY = """
-                        MATCH (a:Agreement)
-                        RETURN a.name as name, a.contract_id as contract_id
-                    """
-                    
-                    agreements_records, _, _ = self._driver.execute_query(AGREEMENT_NAMES_QUERY)
-                    
-                    # Find which agreement is mentioned in the question
-                    agreement_name = None
-                    contract_id = None
-                    
-                    if agreements_records and len(agreements_records) > 0:
-                        # Check each agreement name against the question
-                        for record in agreements_records:
-                            db_agreement_name = record.get('name')
-                            if db_agreement_name and db_agreement_name.lower() in question_lower:
-                                agreement_name = db_agreement_name
-                                contract_id = record.get('contract_id')
-                                break
-                            
-                            # Also check for partial matches (e.g., "franchise" for "Master Franchise Agreement")
-                            name_parts = db_agreement_name.lower().split() if db_agreement_name else []
-                            for part in name_parts:
-                                if len(part) > 4 and part in question_lower:  # Only match meaningful parts (longer than 4 chars)
-                                    agreement_name = db_agreement_name
-                                    contract_id = record.get('contract_id')
-                                    break
-                except Exception as e:
-                    print(f"Error querying agreement names: {str(e)}")
-                    
-                # Fallback to hardcoded checks if database query failed or no match was found
-                # if not agreement_name:
-                #     if "master franchise agreement" in question_lower or "franchise agreement" in question_lower:
-                #         agreement_name = "Master Franchise Agreement"
-                #         contract_id = 3
-                #     elif "stock purchase" in question_lower:
-                #         agreement_name = "Stock Purchase Agreement"
-                #         contract_id = 1
-                #     elif "merger" in question_lower:
-                #         agreement_name = "Merger Agreement"
-                #         contract_id = 2
-                
-                if agreement_name:
-                    # Try to get actual data for this agreement from the database
-                    try:
-                        # Query to get parties and their incorporation info for this agreement
-                        AGREEMENT_QUERY = """
-                            MATCH (a:Agreement)-[:HAS_CLAUSE]->(cc:ContractClause)
-                            WHERE toLower(a.name) CONTAINS toLower($agreement_name) OR a.contract_id = $contract_id
-                            WITH a, collect(cc) as clauses, collect(cc.type) as clause_types
-                            MATCH (org:Organization)-[r:IS_PARTY_TO]->(a)
-                            OPTIONAL MATCH (org)-[:INCORPORATED_IN]->(country)
-                            RETURN a.contract_id as contract_id, a.name as name, 
-                                   collect({name: org.name, role: r.role, country: country.name}) as parties,
-                                   clause_types
-                        """
-                        
-                        records, _, _ = self._driver.execute_query(
-                            AGREEMENT_QUERY, 
-                            {'agreement_name': agreement_name, 'contract_id': contract_id}
-                        )
-                        
-                        if records and len(records) > 0:
-                            # Found actual data in the database
-                            answer = f"Incorporation states for the parties in the {agreement_name}:\n\n"
-                            
-                            # Process each organization's data
-                            parties = records[0].get('parties', [])
-                            for party in parties:
-                                if party and 'name' in party:
-                                    org_name = party.get('name', 'Unknown Organization')
-                                    role = party.get('role', 'Unknown Role')
-                                    country = party.get('country', 'Unknown')
-                                    
-                                    answer += f"  - {org_name} ({role}): {country}\n"
-                            
-                            # Add additional contract details
-                            contract_id = records[0].get('contract_id', 'Unknown')
-                            name = records[0].get('name', agreement_name)
-                            clause_types = records[0].get('clause_types', [])
-                            
-                            answer += f"\nAdditional contract details:\n"
-                            answer += f"  - Contract ID: {contract_id}\n"
-                            
-                            # Add clause types if available
-                            if clause_types and len(clause_types) > 0:
-                                key_clauses = ", ".join(set(clause_types[:3]))
-                                answer += f"  - Key clauses include: {key_clauses}\n"
-                            
-                            return answer
-                    
-                    except Exception as e:
-                        print(f"Error in dynamic query: {str(e)}")
-                        # Fall back to hardcoded responses if query fails
-                    
-                    # If database query didn't work, fall back to hardcoded responses
-                    # based on the agreement type
-                    # if agreement_name == "Master Franchise Agreement":
-                    #     answer = "Incorporation states for the parties in the Master Franchise Agreement:\n\n"
-                    #     answer += "  - Smaaash Entertainment Private Limited (Franchisor): India\n"
-                    #     answer += "  - I-AM Capital Acquisition Company (Franchisee): New York\n\n"
-                        
-                    #     answer += "Additional contract details:\n"
-                    #     answer += "  - Contract ID: 3\n"
-                    #     answer += "  - Key clauses include: IP Ownership Assignment, Non-Compete, Exclusivity\n"
-                    #     answer += "  - The franchisee is incorporated in New York\n"
-                    #     answer += "  - The franchisor is an Indian company\n"
-                        
-                    #     return answer
-                    # elif agreement_name == "Stock Purchase Agreement":
-                    #     answer = "Incorporation states for the parties in the Stock Purchase Agreement:\n\n"
-                    #     answer += "  - Birch First Global Investments Inc. (Buyer): Delaware\n"
-                    #     answer += "  - ATN International, Inc. (Seller): Bermuda\n\n"
-                        
-                    #     answer += "Additional contract details:\n"
-                    #     answer += "  - Contract ID: 1\n"
-                    #     answer += "  - Key clauses include: Payment Terms, Representations and Warranties\n"
-                        
-                    #     return answer
-                    # elif agreement_name == "Merger Agreement":
-                    #     answer = "Incorporation states for the parties in the Merger Agreement:\n\n"
-                    #     answer += "  - Simplicity Esports and Gaming Company (Acquirer): Delaware\n"
-                    #     answer += "  - Cyberfy Holdings Inc. (Target): Nevada\n\n"
-                        
-                    #     answer += "Additional contract details:\n"
-                    #     answer += "  - Contract ID: 2\n"
-                    #     answer += "  - Key clauses include: Termination, Due Diligence, Representations\n"
-                        
-                        return answer
-                
-                # No specific agreement found in the question
-                # Try to get information about all agreements instead
-                try:
-                    ALL_AGREEMENTS_QUERY = """
-                        MATCH (a:Agreement)
-                        OPTIONAL MATCH (org:Organization)-[r:IS_PARTY_TO]->(a)
-                        OPTIONAL MATCH (org)-[:INCORPORATED_IN]->(country)
-                        RETURN a.contract_id as contract_id, a.name as name, 
-                               collect(DISTINCT org.name) as org_names,
-                               collect(DISTINCT country.name) as countries
-                        LIMIT 10
-                    """
-                    
-                    records, _, _ = self._driver.execute_query(ALL_AGREEMENTS_QUERY)
-                    
-                    if records and len(records) > 0:
-                        answer = "I couldn't find a specific agreement in your question. Here are some agreements in the database:\n\n"
-                        
-                        for record in records:
-                            agreement_name = record.get('name', 'Unknown Agreement')
-                            contract_id = record.get('contract_id', 'Unknown')
-                            org_names = record.get('org_names', [])
-                            countries = record.get('countries', [])
-                            
-                            answer += f"• {agreement_name} (ID: {contract_id})\n"
-                            if org_names and len(org_names) > 0:
-                                unique_orgs = [org for org in org_names if org]
-                                if unique_orgs:
-                                    answer += f"  - Parties: {', '.join(unique_orgs[:3])}\n"
-                            
-                        answer += "\nTry asking about one of these agreements specifically. For example:\n"
-                        answer += f"'What are the incorporation states for parties in the {records[0].get('name', 'Stock Purchase Agreement')}?'"
-                        
-                        return answer
-                except Exception as e:
-                    print(f"Error in all agreements query: {str(e)}")
-                
-                return "No specific agreement found in your question. Try asking about a specific agreement like the Master Franchise Agreement, Stock Purchase Agreement, or Merger Agreement."
+                # Generic approach - try to extract entities and build query
+                return await self._handle_generic_questions(user_question)
                 
         except Exception as e:
-            # Log the error for debugging
-            print(f"Error in answer_aggregation_question: {str(e)}")
-            return f"Sorry, I couldn't process that question: {str(e)}"
+            return f"Sorry, I couldn't process that question. Error: {str(e)}"
+    
+    async def _try_pattern_based_approach(self, user_question: str) -> str:
+        """
+        Try pattern-based approach first for better accuracy on complex questions
+        """
+        try:
+            question_lower = user_question.lower()
+            
+            # Enhanced pattern matching for complex questions
+            if any(keyword in question_lower for keyword in ['incorporation', 'incorporated']) and \
+               any(keyword in question_lower for keyword in ['delaware', 'new york', 'california', 'nevada']):
+                
+                # This is specifically about incorporation states - handle directly
+                if any(clause_keyword in question_lower for clause_keyword in ['clause', 'license', 'assignment']):
+                    return await self._handle_incorporation_with_clauses(user_question)
+            
+            elif any(keyword in question_lower for keyword in ['clause', 'clauses']) and \
+                 ('and' in question_lower or 'both' in question_lower):
+                # Questions asking for multiple clause types
+                return await self._handle_multiple_clause_questions(user_question)
+            
+            # Try other enhanced pattern handlers
+            elif any(keyword in question_lower for keyword in ['organization', 'party', 'parties']) and \
+                 any(keyword in question_lower for keyword in ['incorporation', 'incorporated']):
+                return await self._handle_incorporation_questions(user_question)
+                
+            return None  # No pattern matched, let other methods handle it
+            
+        except Exception as e:
+            print(f"Pattern-based approach error: {e}")
+            return None
 
+    async def _handle_incorporation_with_clauses(self, question: str) -> str:
+        """Enhanced handler for incorporation + clause questions"""
+        question_lower = question.lower()
+        
+        # Extract state/country from question
+        states = []
+        if 'delaware' in question_lower:
+            states.append('Delaware')
+        if 'new york' in question_lower:
+            states.append('New York')
+        if 'california' in question_lower:
+            states.append('California')
+        if 'nevada' in question_lower:
+            states.append('Nevada')
+        
+        # Extract clause types from question
+        clause_filters = []
+        if 'license' in question_lower or 'licensing' in question_lower:
+            clause_filters.extend(["cl.type CONTAINS 'License'", "cl.type CONTAINS 'license'"])
+        if 'assignment' in question_lower:
+            clause_filters.extend(["cl.type CONTAINS 'Assignment'", "cl.type CONTAINS 'assignment'"])
+        if 'liability' in question_lower:
+            clause_filters.append("cl.type CONTAINS 'Liability'")
+        if 'termination' in question_lower:
+            clause_filters.append("cl.type CONTAINS 'Termination'")
+        
+        # Build the query dynamically
+        where_conditions = []
+        
+        if states:
+            state_conditions = [f"inc.state = '{state}'" for state in states]
+            where_conditions.append(f"({' OR '.join(state_conditions)})")
+        
+        if clause_filters:
+            where_conditions.append(f"({' OR '.join(clause_filters)})")
+        
+        where_clause = ""
+        if where_conditions:
+            where_clause = f"WHERE {' AND '.join(where_conditions)}"
+        
+        query = f"""
+        MATCH (o:Organization)-[inc:INCORPORATED_IN]->(c:Country)
+        MATCH (o)-[:IS_PARTY_TO]->(a:Agreement)
+        MATCH (a)-[:HAS_CLAUSE]->(cl:ContractClause)
+        {where_clause}
+        
+        WITH o, c, inc, a, collect(DISTINCT cl.type) as clause_types
+        WHERE size(clause_types) >= 1
+        
+        RETURN o.name as organization,
+               c.name as incorporation_country,
+               inc.state as incorporation_state,
+               a.name as agreement,
+               clause_types
+        ORDER BY organization
+        LIMIT 50
+        """
+        
+        try:
+            records, _, _ = self.driver.execute_query(query)
+            
+            if not records:
+                return "No organizations found matching the specified criteria."
+            
+            # Check if question asks for organizations with BOTH license AND assignment
+            if 'both' in question_lower and 'license' in question_lower and 'assignment' in question_lower:
+                # Filter for organizations that have both types
+                filtered_records = []
+                for record in records:
+                    clause_types = record.get('clause_types', [])
+                    has_license = any('license' in ct.lower() for ct in clause_types)
+                    has_assignment = any('assignment' in ct.lower() for ct in clause_types)
+                    if has_license and has_assignment:
+                        filtered_records.append(record)
+                records = filtered_records
+            
+            if not records:
+                return "No organizations found with both License and Assignment clauses in the specified incorporation state."
+            
+            answer = f"Organizations meeting the criteria:\n\n"
+            
+            for record in records:
+                org = record.get('organization', 'Unknown')
+                country = record.get('incorporation_country', 'Unknown')
+                state = record.get('incorporation_state', 'N/A')
+                agreement = record.get('agreement', 'Unknown')
+                clause_types = record.get('clause_types', [])
+                
+                answer += f"• {org}\n"
+                answer += f"  - Incorporated in: {country}"
+                if state and state != 'N/A':
+                    answer += f" ({state})"
+                answer += f"\n"
+                answer += f"  - Agreement: {agreement}\n"
+                answer += f"  - Relevant clause types: {', '.join(clause_types)}\n\n"
+            
+            return answer
+            
+        except Exception as e:
+            print(f"Error in incorporation with clauses query: {e}")
+            return f"Error processing the query: {str(e)}"
 
+    async def _handle_multiple_clause_questions(self, question: str) -> str:
+        """Handle questions asking for multiple specific clause types"""
+        question_lower = question.lower()
+        
+        # Extract clause types mentioned
+        mentioned_clauses = []
+        if 'license' in question_lower:
+            mentioned_clauses.append('License')
+        if 'assignment' in question_lower:
+            mentioned_clauses.append('Assignment')
+        if 'liability' in question_lower:
+            mentioned_clauses.append('Liability')
+        if 'termination' in question_lower:
+            mentioned_clauses.append('Termination')
+        if 'competitive' in question_lower or 'competition' in question_lower:
+            mentioned_clauses.append('Compet')
+            
+        if len(mentioned_clauses) < 2:
+            return None  # Not a multi-clause question
+            
+        # Build query to find agreements with multiple clause types
+        clause_conditions = []
+        for clause in mentioned_clauses:
+            clause_conditions.append(f"cl.type CONTAINS '{clause}'")
+            
+        query = f"""
+        MATCH (a:Agreement)-[:HAS_CLAUSE]->(cl:ContractClause)
+        WHERE {' OR '.join(clause_conditions)}
+        
+        WITH a, collect(DISTINCT cl.type) as found_clause_types
+        WHERE size(found_clause_types) >= 2
+        
+        MATCH (o:Organization)-[:IS_PARTY_TO]->(a)
+        OPTIONAL MATCH (o)-[inc:INCORPORATED_IN]->(c:Country)
+        
+        RETURN a.name as agreement,
+               found_clause_types,
+               collect(DISTINCT {{name: o.name, country: c.name, state: inc.state}}) as parties
+        ORDER BY size(found_clause_types) DESC
+        LIMIT 20
+        """
+        
+        try:
+            records, _, _ = self.driver.execute_query(query)
+            
+            if not records:
+                return f"No agreements found containing multiple clause types from: {', '.join(mentioned_clauses)}"
+                
+            answer = f"Agreements with multiple relevant clause types:\n\n"
+            
+            for record in records:
+                agreement = record.get('agreement', 'Unknown')
+                clause_types = record.get('found_clause_types', [])
+                parties = record.get('parties', [])
+                
+                answer += f"• {agreement}\n"
+                answer += f"  - Clause types: {', '.join(clause_types)}\n"
+                answer += f"  - Parties:\n"
+                
+                for party in parties:
+                    party_name = party.get('name', 'Unknown')
+                    country = party.get('country', 'Unknown')
+                    state = party.get('state', '')
+                    
+                    answer += f"    - {party_name} ({country}"
+                    if state:
+                        answer += f", {state}"
+                    answer += f")\n"
+                answer += "\n"
+                
+            return answer
+            
+        except Exception as e:
+            print(f"Error in multiple clause query: {e}")
+            return f"Error processing the query: {str(e)}"
 
+    async def _handle_incorporation_questions(self, question: str) -> str:
+        """Handle questions about incorporation states/countries"""
+        query = """
+        MATCH (o:Organization)-[inc:INCORPORATED_IN]->(country:Country)
+        OPTIONAL MATCH (o)-[:IS_PARTY_TO]->(a:Agreement)
+        
+        RETURN o.name as organization,
+               country.name as incorporation_country,
+               inc.state as incorporation_state,
+               collect(DISTINCT a.name) as agreements,
+               count(DISTINCT a) as agreement_count
+        ORDER BY organization
+        LIMIT 100
+        """
+        
+        records, _, _ = self.driver.execute_query(query)
+        
+        if not records:
+            return "No incorporation information found."
+        
+        answer = "Incorporation information for organizations:\n\n"
+        for record in records:
+            org = record.get('organization', 'Unknown')
+            country = record.get('incorporation_country', 'Unknown')
+            state = record.get('incorporation_state', 'N/A')
+            agreement_count = record.get('agreement_count', 0)
+            
+            answer += f"• {org}: {country}"
+            if state and state != 'N/A':
+                answer += f" ({state})"
+            answer += f" - {agreement_count} agreements\n"
+        
+        return answer
+    
+    async def _handle_clause_questions(self, question: str) -> str:
+        """Handle questions about clauses and clause types"""
+        question_lower = question.lower()
+        
+        # Check if question is asking about specific clause types
+        clause_filters = []
+        if 'license' in question_lower or 'licensing' in question_lower:
+            clause_filters.append("cl.type CONTAINS 'License'")
+        if 'liability' in question_lower:
+            clause_filters.append("cl.type CONTAINS 'Liability'")
+        if 'termination' in question_lower:
+            clause_filters.append("cl.type CONTAINS 'Termination'")
+        if 'assignment' in question_lower:
+            clause_filters.append("cl.type CONTAINS 'Assignment'")
+        if 'competitive' in question_lower or 'competition' in question_lower:
+            clause_filters.append("cl.type CONTAINS 'Compet'")
+        
+        where_clause = ""
+        if clause_filters:
+            where_clause = f"WHERE {' OR '.join(clause_filters)}"
+        
+        query = f"""
+        MATCH (a:Agreement)-[:HAS_CLAUSE]->(cl:ContractClause)
+        {where_clause}
+        
+        RETURN cl.type as clause_type,
+               count(DISTINCT cl) as clause_count,
+               count(DISTINCT a) as agreement_count,
+               collect(DISTINCT a.name) as agreements
+        ORDER BY clause_count DESC
+        LIMIT 50
+        """
+        
+        records, _, _ = self.driver.execute_query(query)
+        
+        if not records:
+            return "No clause information found matching your query."
+        
+        answer = "Clause type analysis:\n\n"
+        for record in records:
+            clause_type = record.get('clause_type', 'Unknown')
+            clause_count = record.get('clause_count', 0)
+            agreement_count = record.get('agreement_count', 0)
+            
+            answer += f"• {clause_type}: {clause_count} clauses across {agreement_count} agreements\n"
+        
+        return answer
+    
+    async def _handle_organization_questions(self, question: str) -> str:
+        """Handle questions about organizations and parties"""
+        query = """
+        MATCH (o:Organization)-[ipt:IS_PARTY_TO]->(a:Agreement)
+        OPTIONAL MATCH (o)-[inc:INCORPORATED_IN]->(country:Country)
+        
+        WITH o, 
+             collect(DISTINCT ipt.role) as roles,
+             collect(DISTINCT a.name) as agreements,
+             country.name as inc_country,
+             inc.state as inc_state,
+             count(DISTINCT a) as agreement_count
+        
+        RETURN o.name as organization,
+               roles,
+               agreement_count,
+               agreements,
+               inc_country,
+               inc_state
+        ORDER BY agreement_count DESC, organization
+        LIMIT 50
+        """
+        
+        records, _, _ = self.driver.execute_query(query)
+        
+        if not records:
+            return "No organization information found."
+        
+        answer = "Organization analysis:\n\n"
+        for record in records:
+            org = record.get('organization', 'Unknown')
+            roles = record.get('roles', [])
+            agreement_count = record.get('agreement_count', 0)
+            inc_country = record.get('inc_country', 'Unknown')
+            inc_state = record.get('inc_state', '')
+            
+            answer += f"• {org} ({inc_country}"
+            if inc_state:
+                answer += f", {inc_state}"
+            answer += f")\n"
+            answer += f"  - Roles: {', '.join(roles) if roles else 'None'}\n"
+            answer += f"  - {agreement_count} agreements\n\n"
+        
+        return answer
 
+    async def _handle_agreement_questions(self, question: str) -> str:
+        """Handle questions about agreements and contracts"""
+        query = """
+        MATCH (a:Agreement)
+        OPTIONAL MATCH (o:Organization)-[ipt:IS_PARTY_TO]->(a)
+        OPTIONAL MATCH (a)-[gbl:GOVERNED_BY_LAW]->(country:Country)
+        OPTIONAL MATCH (a)-[:HAS_CLAUSE]->(cl:ContractClause)
+        
+        RETURN a.name as agreement_name,
+               a.contract_id as contract_id,
+               a.agreement_type as agreement_type,
+               a.effective_date as effective_date,
+               collect(DISTINCT {name: o.name, role: ipt.role}) as parties,
+               country.name as governing_country,
+               gbl.state as governing_state,
+               count(DISTINCT cl.type) as clause_complexity,
+               collect(DISTINCT cl.type) as clause_types
+        ORDER BY clause_complexity DESC, agreement_name
+        LIMIT 50
+        """
+        
+        records, _, _ = self.driver.execute_query(query)
+        
+        if not records:
+            return "No agreement information found."
+        
+        answer = "Agreement analysis:\n\n"
+        for record in records:
+            name = record.get('agreement_name', 'Unknown')
+            contract_id = record.get('contract_id', 'N/A')
+            agreement_type = record.get('agreement_type', 'Unknown')
+            parties = record.get('parties', [])
+            governing_country = record.get('governing_country', 'Unknown')
+            governing_state = record.get('governing_state', '')
+            clause_complexity = record.get('clause_complexity', 0)
+            
+            answer += f"• {name} (ID: {contract_id})\n"
+            answer += f"  - Type: {agreement_type}\n"
+            answer += f"  - Governing: {governing_country}"
+            if governing_state:
+                answer += f" ({governing_state})"
+            answer += f"\n"
+            answer += f"  - Parties: {len(parties)} parties\n"
+            answer += f"  - Clause complexity: {clause_complexity} unique clause types\n\n"
+        
+        return answer
 
-    async def _get_agreement (self,agreement_node, format="short", party_list=None, role_list=None,country_list=None,
-                              state_list=None,clause_list=None,clause_dict=None): 
-        agreement : Agreement = {}
+    async def _handle_jurisdiction_questions(self, question: str) -> str:
+        """Handle questions about jurisdictions and governing law"""
+        query = """
+        MATCH (a:Agreement)-[gbl:GOVERNED_BY_LAW]->(country:Country)
+        OPTIONAL MATCH (o:Organization)-[:IS_PARTY_TO]->(a)
+        OPTIONAL MATCH (o)-[inc:INCORPORATED_IN]->(inc_country:Country)
+        
+        WITH country.name as governing_country,
+             gbl.state as governing_state,
+             collect(DISTINCT a.name) as agreements,
+             collect(DISTINCT {
+                 party: o.name,
+                 inc_country: inc_country.name,
+                 inc_state: inc.state
+             }) as parties
+        
+        RETURN governing_country,
+               governing_state,
+               size(agreements) as agreement_count,
+               agreements,
+               parties
+        ORDER BY agreement_count DESC
+        LIMIT 20
+        """
+        
+        records, _, _ = self.driver.execute_query(query)
+        
+        if not records:
+            return "No jurisdiction information found."
+        
+        answer = "Jurisdiction analysis:\n\n"
+        for record in records:
+            gov_country = record.get('governing_country', 'Unknown')
+            gov_state = record.get('governing_state', '')
+            agreement_count = record.get('agreement_count', 0)
+            parties = record.get('parties', [])
+            
+            answer += f"• {gov_country}"
+            if gov_state:
+                answer += f" ({gov_state})"
+            answer += f": {agreement_count} agreements\n"
+            
+            # Show cross-jurisdictional patterns
+            unique_inc_countries = set()
+            for party in parties:
+                if party.get('inc_country'):
+                    unique_inc_countries.add(party['inc_country'])
+            
+            if unique_inc_countries:
+                answer += f"  - Party incorporation countries: {', '.join(unique_inc_countries)}\n"
+            answer += "\n"
+        
+        return answer
 
-        if format == "short" and agreement_node:
-            agreement: Agreement = {
-                "contract_id" : agreement_node.get('contract_id'),
-                "name" : agreement_node.get('name'),
-                "agreement_type": agreement_node.get('agreement_type')
+    async def _handle_excerpt_questions(self, question: str) -> str:
+        """Handle questions about contract excerpts and text content"""
+        query = """
+        MATCH (a:Agreement)-[:HAS_CLAUSE]->(cl:ContractClause)-[:HAS_EXCERPT]->(e:Excerpt)
+        OPTIONAL MATCH (o:Organization)-[:IS_PARTY_TO]->(a)
+        
+        RETURN a.name as agreement_name,
+               a.contract_id as contract_id,
+               cl.type as clause_type,
+               e.text as excerpt_text,
+               collect(DISTINCT o.name) as parties
+        ORDER BY agreement_name, clause_type
+        LIMIT 50
+        """
+        
+        records, _, _ = self.driver.execute_query(query)
+        
+        if not records:
+            return "No excerpt information found."
+        
+        answer = "Contract excerpt analysis:\n\n"
+        for record in records:
+            agreement_name = record.get('agreement_name', 'Unknown')
+            contract_id = record.get('contract_id', 'N/A')
+            clause_type = record.get('clause_type', 'Unknown')
+            excerpt_text = record.get('excerpt_text', 'No text available')
+            parties = record.get('parties', [])
+            
+            answer += f"• {agreement_name} (ID: {contract_id})\n"
+            answer += f"  - Clause: {clause_type}\n"
+            answer += f"  - Parties: {', '.join(parties)}\n"
+            answer += f"  - Excerpt: {excerpt_text[:200]}{'...' if len(excerpt_text) > 200 else ''}\n\n"
+        
+        return answer
+
+    async def _handle_generic_questions(self, question: str) -> str:
+        """Handle generic questions by providing database overview"""
+        stats = self.get_contract_statistics()
+        
+        answer = "Database Overview:\n\n"
+        answer += f"• Total Agreements: {stats.get('total_contracts', 'Unknown')}\n"
+        answer += f"• Organizations: {stats.get('total_organizations', 'Unknown')}\n" 
+        answer += f"• Total Clauses: {stats.get('total_clauses', 'Unknown')}\n"
+        answer += f"• Unique Clause Types: {stats.get('unique_clause_types', 'Unknown')}\n"
+        answer += f"• Countries: {stats.get('total_countries', 'Unknown')}\n\n"
+        
+        contract_types = stats.get('contract_types', [])
+        if contract_types:
+            answer += f"Contract Types: {', '.join(contract_types)}\n\n"
+        
+        answer += "For more specific information, try asking about:\n"
+        answer += "• Incorporation states of organizations\n"
+        answer += "• Specific clause types (license, liability, termination, etc.)\n"
+        answer += "• Agreement details and parties\n"
+        answer += "• Governing jurisdictions\n"
+        answer += "• Contract content and excerpts\n"
+        
+        return answer
+
+    # ==================== PERFORMANCE MONITORING ====================
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics for query optimization"""
+        if not self._query_stats:
+            return {"message": "No query statistics available"}
+        
+        total_queries = len(self._query_stats)
+        avg_time = sum(stat['execution_time'] for stat in self._query_stats.values()) / total_queries
+        
+        return {
+            "total_queries": total_queries,
+            "average_execution_time": avg_time,
+            "slowest_queries": sorted(
+                [(query, stats['execution_time']) for query, stats in self._query_stats.items()],
+                key=lambda x: x[1],
+                reverse=True
+            )[:5]
+        }
+    
+    def clear_performance_stats(self):
+        """Clear performance statistics"""
+        self._query_stats.clear()
+    
+    # ==================== RESULT FORMATTING ====================
+    
+    def _format_aggregation_result(self, items: List[Any], question: str, execution_time: float = 0) -> str:
+        """Format aggregation results with smart truncation for large datasets"""
+        if not items:
+            return "No results found."
+        
+        # For very large result sets, provide summary statistics
+        if len(items) > 100:
+            return self._format_large_result_summary(items, question, execution_time)
+        
+        # Standard formatting for manageable result sets
+        answer = f"Query results (showing {len(items)} items"
+        if execution_time > 0:
+            answer += f", execution time: {execution_time:.3f}s"
+        answer += "):\n\n"
+        
+        for i, record in enumerate(items[:50]):  # Limit display to 50 items
+            record_str = str(record).replace("<Record ", "").replace(">", "").strip()
+            answer += f"  {i+1}. {record_str}\n"
+        
+        if len(items) > 50:
+            answer += f"\n... and {len(items) - 50} more results (truncated for readability)"
+        
+        return answer
+    
+    def _format_large_result_summary(self, items: List[Any], question: str, execution_time: float = 0) -> str:
+        """Provide summary statistics for very large result sets"""
+        total_count = len(items)
+        
+        # Sample first few results
+        sample_size = min(10, total_count)
+        sample_results = items[:sample_size]
+        
+        summary = f"Large result set found ({total_count} total results"
+        if execution_time > 0:
+            summary += f", execution time: {execution_time:.3f}s"
+        summary += ").\n\n"
+        
+        summary += f"Sample of first {sample_size} results:\n"
+        
+        for i, record in enumerate(sample_results):
+            record_str = str(record).replace("<Record ", "").replace(">", "").strip()
+            summary += f"  {i+1}. {record_str}\n"
+        
+        summary += f"\n... and {total_count - sample_size} more results."
+        summary += f"\n\nFor the complete dataset, consider using more specific filters or aggregation queries."
+        
+        return summary
+
+    # ==================== UTILITY METHODS ====================
+    
+    def health_check(self) -> Dict[str, Any]:
+        """Verify database connectivity and basic functionality"""
+        try:
+            # Test basic connectivity
+            records, _, _ = self.driver.execute_query("MATCH (n) RETURN count(n) as total_nodes LIMIT 1")
+            total_nodes = records[0]['total_nodes'] if records else 0
+            
+            # Test index status
+            index_records, _, _ = self.driver.execute_query("SHOW INDEXES")
+            active_indexes = len([r for r in index_records if r.get('state') == 'ONLINE'])
+            
+            return {
+                "status": "healthy",
+                "total_nodes": total_nodes,
+                "active_indexes": active_indexes,
+                "driver_status": "connected"
             }
-            agreement['parties']= await self._get_parties (
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "error": str(e)
+            }
+
+
+# ==================== BACKWARD COMPATIBILITY CLASS ====================
+
+class ContractSearchService(ContractService):
+    """
+    Backward-compatible wrapper for the ContractService.
+    
+    This ensures existing code that uses ContractSearchService continues to work
+    while gaining the benefits of the optimized implementation.
+    
+    Usage: Replace ContractSearchService imports with this file, and everything
+    should work exactly the same but with better performance.
+    """
+    
+    def __init__(self, uri: str, user: str, pwd: str):
+        """Initialize with same signature as original ContractSearchService"""
+        super().__init__(uri, user, pwd)
+        print("✓ Using ContractService for enhanced performance")
+        print("  Run 'python initialize_optimizations.py' if not already done for best results")
+
+    # ==================== BACKWARD COMPATIBILITY METHODS ====================
+    
+    async def get_contract(self, contract_id: int) -> Agreement:
+        """Get contract by ID - maintains backward compatibility"""
+        GET_CONTRACT_BY_ID_QUERY = """
+            MATCH (a:Agreement {contract_id: $contract_id})-[:HAS_CLAUSE]->(clause:ContractClause)
+            WITH a, collect(clause) as clauses
+            MATCH (country:Country)-[i:INCORPORATED_IN]-(p:Organization)-[r:IS_PARTY_TO]-(a)
+            WITH a, clauses, collect(p) as parties, collect(country) as countries, collect(r) as roles, collect(i) as states
+            RETURN a as agreement, clauses, parties, countries, roles, states
+        """
+        
+        records, _, _ = self.driver.execute_query(GET_CONTRACT_BY_ID_QUERY, {'contract_id': contract_id})
+        
+        if not records:
+            return {}
+        
+        agreement_node = records[0].get('agreement')
+        party_list = records[0].get('parties')
+        role_list = records[0].get('roles')
+        country_list = records[0].get('countries')
+        state_list = records[0].get('states')
+        clause_list = records[0].get('clauses')
+        
+        return await self._get_agreement(
+            agreement_node, format="long",
+            party_list=party_list, role_list=role_list,
+            country_list=country_list, state_list=state_list,
+            clause_list=clause_list
+        )
+    
+    async def get_contracts(self, organization_name: str) -> List[Agreement]:
+        """Get contracts by organization - maintains backward compatibility"""
+        GET_CONTRACTS_BY_PARTY_NAME = """
+            CALL db.index.fulltext.queryNodes('organizationNameTextIndex', $organization_name)
+            YIELD node AS o, score
+            WITH o, score
+            ORDER BY score DESC
+            LIMIT 1
+            WITH o
+            MATCH (o)-[:IS_PARTY_TO]->(a:Agreement)
+            WITH a
+            MATCH (country:Country)-[i:INCORPORATED_IN]-(p:Organization)-[r:IS_PARTY_TO]-(a:Agreement)
+            RETURN a as agreement, collect(p) as parties, collect(r) as roles, collect(country) as countries, collect(i) as states
+        """
+        
+        records, _, _ = self.driver.execute_query(GET_CONTRACTS_BY_PARTY_NAME, {'organization_name': organization_name})
+        
+        all_agreements = []
+        for row in records:
+            agreement_node = row['agreement']
+            party_list = row['parties']
+            role_list = row['roles']
+            country_list = row['countries']
+            state_list = row['states']
+            
+            agreement = await self._get_agreement(
+                format="short",
+                agreement_node=agreement_node,
                 party_list=party_list,
                 role_list=role_list,
                 country_list=country_list,
-                state_list=state_list)               
-                
-        elif format=="long" and agreement_node: 
-            agreement: Agreement = {
-                "contract_id" : agreement_node.get('contract_id'),
-                "name" : agreement_node.get('name'),
-                "agreement_type": agreement_node.get('agreement_type'),
-                "agreement_date": agreement_node.get('agreement_date'),
-                "expiration_date":  agreement_node.get('expiration_date'),
-                "renewal_term": agreement_node.get('renewal_term')
-            }
-            agreement['parties'] = await self._get_parties (
-                party_list=party_list, 
+                state_list=state_list
+            )
+            all_agreements.append(agreement)
+        
+        return all_agreements
+    
+    async def get_contracts_with_clause_type(self, clause_type: ClauseType) -> List[Agreement]:
+        """Get contracts with specific clause type - maintains backward compatibility"""
+        GET_CONTRACT_WITH_CLAUSE_TYPE_QUERY = """
+            MATCH (a:Agreement)-[:HAS_CLAUSE]->(cc:ContractClause {type: $clause_type})
+            WITH a
+            MATCH (country:Country)-[i:INCORPORATED_IN]-(p:Organization)-[r:IS_PARTY_TO]-(a:Agreement)
+            RETURN a as agreement, collect(p) as parties, collect(r) as roles, collect(country) as countries, collect(i) as states
+        """
+        
+        clause_type_value = str(clause_type.value) if hasattr(clause_type, 'value') else str(clause_type)
+        
+        records, _, _ = self.driver.execute_query(GET_CONTRACT_WITH_CLAUSE_TYPE_QUERY, {'clause_type': clause_type_value})
+        
+        all_agreements = []
+        for row in records:
+            agreement_node = row['agreement']
+            party_list = row['parties']
+            role_list = row['roles']
+            country_list = row['countries']
+            state_list = row['states']
+            
+            agreement = await self._get_agreement(
+                format="short",
+                agreement_node=agreement_node,
+                party_list=party_list,
                 role_list=role_list,
                 country_list=country_list,
-                state_list=state_list)   
-
-            clauses = []
-            if clause_list:
-                for clause in clause_list:
-                    clause_obj : ContractClause = {"type": clause.get('type')}
-                    clauses.append(clause_obj)
-            
-            elif clause_dict:
-            
-                for clause_type_key in clause_dict:
-                    clause : ContractClause = {"type": clause_type_key, "excerpts": clause_dict[clause_type_key]}
-                    clauses.append(clause)
-
-            agreement['clauses'] = clauses
-
-            
-
-        return agreement
-
-    async def _get_parties (self, party_list=None, role_list=None,country_list=None,state_list=None):
-        parties = []
-        if party_list:
-            for i in range(len(party_list)):
-                p: Party = {
-                    "name":  party_list[i].get('name'),
-                    "role":  role_list[i].get('role'),
-                    "incorporation_country": country_list[i].get('name'),
-                    "incorporation_state": state_list[i].get('state')
-                }
-                parties.append(p)
+                state_list=state_list
+            )
+            all_agreements.append(agreement)
         
-        return parties
+        return all_agreements
     
-    async def get_contract_excerpts (self, contract_id:int):
-
+    async def get_contracts_without_clause(self, clause_type: ClauseType) -> List[Agreement]:
+        """Get contracts without specific clause type - maintains backward compatibility"""
+        GET_CONTRACT_WITHOUT_CLAUSE_TYPE_QUERY = """
+            MATCH (a:Agreement)
+            OPTIONAL MATCH (a)-[:HAS_CLAUSE]->(cc:ContractClause {type: $clause_type})
+            WITH a,cc
+            WHERE cc is NULL
+            WITH a
+            MATCH (country:Country)-[i:INCORPORATED_IN]-(p:Organization)-[r:IS_PARTY_TO]-(a)
+            RETURN a as agreement, collect(p) as parties, collect(r) as roles, collect(country) as countries, collect(i) as states
+        """
+        
+        clause_type_value = str(clause_type.value) if hasattr(clause_type, 'value') else str(clause_type)
+        
+        records, _, _ = self.driver.execute_query(GET_CONTRACT_WITHOUT_CLAUSE_TYPE_QUERY, {'clause_type': clause_type_value})
+        
+        all_agreements = []
+        for row in records:
+            agreement_node = row['agreement']
+            party_list = row['parties']
+            role_list = row['roles']
+            country_list = row['countries']
+            state_list = row['states']
+            
+            agreement = await self._get_agreement(
+                format="short",
+                agreement_node=agreement_node,
+                party_list=party_list,
+                role_list=role_list,
+                country_list=country_list,
+                state_list=state_list
+            )
+            all_agreements.append(agreement)
+        
+        return all_agreements
+    
+    async def get_contracts_similar_text(self, clause_text: str) -> List[Agreement]:
+        """Get contracts with similar text - maintains backward compatibility"""
+        EXCERPT_TO_AGREEMENT_TRAVERSAL_QUERY = """
+            MATCH (a:Agreement)-[:HAS_CLAUSE]->(cc:ContractClause)-[:HAS_EXCERPT]-(node) 
+            RETURN a.name as agreement_name, a.contract_id as contract_id, cc.type as clause_type, node.text as excerpt
+        """
+        
+        retriever = VectorCypherRetriever(
+            driver=self.driver,
+            index_name="excerpt_embedding",
+            embedder=self._openai_embedder,
+            retrieval_query=EXCERPT_TO_AGREEMENT_TRAVERSAL_QUERY,
+            result_formatter=my_vector_search_excerpt_record_formatter
+        )
+        
+        retriever_result = retriever.search(query_text=clause_text, top_k=3)
+        
+        agreements = []
+        for item in retriever_result.items:
+            content = item.content
+            agreement = {
+                'name': content['agreement_name'],
+                'contract_id': content['contract_id']
+            }
+            clause = {
+                "type": content['clause_type'],
+                "excerpts": [content['excerpt']]
+            }
+            agreement['clauses'] = [clause]
+            agreements.append(agreement)
+        
+        return agreements
+    
+    async def answer_aggregation_question(self, user_question: str) -> str:
+        """Main question answering method - uses new dynamic optimization"""
+        return await self.answer_complex_aggregation_question(user_question)
+    
+    async def get_contract_excerpts(self, contract_id: int):
+        """Get contract excerpts - maintains backward compatibility"""
         GET_CONTRACT_CLAUSES_QUERY = """
         MATCH (a:Agreement {contract_id: $contract_id})-[:HAS_CLAUSE]->(cc:ContractClause)-[:HAS_EXCERPT]->(e:Excerpt)
         RETURN a as agreement, cc.type as contract_clause_type, collect(e.text) as excerpts 
         """
-        #run CYPHER query
-        clause_records, _, _  = self._driver.execute_query(GET_CONTRACT_CLAUSES_QUERY,{'contract_id':contract_id})
-
-        #get a dict d[clause_type]=list(Excerpt)
+        
+        clause_records, _, _ = self.driver.execute_query(GET_CONTRACT_CLAUSES_QUERY, {'contract_id': contract_id})
+        
         clause_dict = {}
+        agreement_node = None
+        
         for row in clause_records:
             agreement_node = row['agreement']
             clause_type = row['contract_clause_type']
-            relevant_excerpts =  row['excerpts']
+            relevant_excerpts = row['excerpts']
             clause_dict[clause_type] = relevant_excerpts
         
-        #Agreement to return
-        agreement = await self._get_agreement(
-            format="long",
-            agreement_node=agreement_node,
-            clause_dict=clause_dict)
-
+        if agreement_node:
+            return await self._get_agreement(
+                format="long",
+                agreement_node=agreement_node,
+                clause_dict=clause_dict
+            )
+        
+        return {}
+    
+    # ==================== HELPER METHODS ====================
+    
+    async def _get_agreement(self, agreement_node, format="short", party_list=None, role_list=None, 
+                           country_list=None, state_list=None, clause_list=None, clause_dict=None):
+        """Helper method to construct Agreement objects"""
+        agreement = {}
+        
+        if format == "short" and agreement_node:
+            agreement = {
+                "contract_id": agreement_node.get('contract_id'),
+                "name": agreement_node.get('name'),
+                "agreement_type": agreement_node.get('agreement_type')
+            }
+            agreement['parties'] = await self._get_parties(
+                party_list=party_list,
+                role_list=role_list,
+                country_list=country_list,
+                state_list=state_list
+            )
+        
+        elif format == "long" and agreement_node:
+            agreement = {
+                "contract_id": agreement_node.get('contract_id'),
+                "name": agreement_node.get('name'),
+                "agreement_type": agreement_node.get('agreement_type'),
+                "agreement_date": agreement_node.get('agreement_date'),
+                "effective_date": agreement_node.get('effective_date'),
+                "expiration_date": agreement_node.get('expiration_date'),
+                "renewal_term": agreement_node.get('renewal_term')
+            }
+            agreement['parties'] = await self._get_parties(
+                party_list=party_list,
+                role_list=role_list,
+                country_list=country_list,
+                state_list=state_list
+            )
+            
+            clauses = []
+            if clause_list:
+                for clause in clause_list:
+                    clause_obj = {"type": clause.get('type')}
+                    clauses.append(clause_obj)
+            elif clause_dict:
+                for clause_type_key in clause_dict:
+                    clause = {"type": clause_type_key, "excerpts": clause_dict[clause_type_key]}
+                    clauses.append(clause)
+            
+            agreement['clauses'] = clauses
+        
         return agreement
+    
+    async def _get_parties(self, party_list=None, role_list=None, country_list=None, state_list=None):
+        """Helper method to construct Party objects"""
+        parties = []
+        if party_list:
+            for i in range(len(party_list)):
+                party = {
+                    "name": party_list[i].get('name'),
+                    "role": role_list[i].get('role') if role_list and i < len(role_list) else None,
+                    "incorporation_country": country_list[i].get('name') if country_list and i < len(country_list) else None,
+                    "incorporation_state": state_list[i].get('state') if state_list and i < len(state_list) else None
+                }
+                parties.append(party)
+        
+        return parties
+
+    def _format_aggregation_result(self, items: List[Any], question: str, execution_time: float = 0) -> str:
+        """Format aggregation results with smart truncation for large datasets"""
+        if not items:
+            return "No results found."
+        
+        # For very large result sets, provide summary statistics
+        if len(items) > 100:
+            return self._format_large_result_summary(items, question, execution_time)
+        
+        # Standard formatting for manageable result sets
+        answer = f"Query results (showing {len(items)} items"
+        if execution_time > 0:
+            answer += f", execution time: {execution_time:.3f}s"
+        answer += "):\n\n"
+        
+        for i, record in enumerate(items[:50]):  # Limit display to 50 items
+            record_str = str(record).replace("<Record ", "").replace(">", "").strip()
+            answer += f"  {i+1}. {record_str}\n"
+        
+        if len(items) > 50:
+            answer += f"\n... and {len(items) - 50} more results (truncated for readability)"
+        
+        return answer
+    
+    def _format_large_result_summary(self, items: List[Any], question: str, execution_time: float = 0) -> str:
+        """Provide summary statistics for very large result sets"""
+        total_count = len(items)
+        
+        # Sample first few results
+        sample_size = min(10, total_count)
+        sample_results = items[:sample_size]
+        
+        summary = f"Large result set found ({total_count} total results"
+        if execution_time > 0:
+            summary += f", execution time: {execution_time:.3f}s"
+        summary += ").\n\n"
+        
+        summary += f"Sample of first {sample_size} results:\n"
+        
+        for i, record in enumerate(sample_results):
+            record_str = str(record).replace("<Record ", "").replace(">", "").strip()
+            summary += f"  {i+1}. {record_str}\n"
+        
+        summary += f"\n... and {total_count - sample_size} more results."
+        summary += f"\n\nFor the complete dataset, consider using more specific filters or aggregation queries."
+        
+        return summary
 
 
+# ==================== CONVENIENCE FUNCTIONS ====================
 
+def create_optimized_service_from_env() -> ContractService:
+    """
+    Create ContractService using environment variables from ../.env
+    
+    Returns:
+        ContractService instance
+        
+    Raises:
+        ValueError: If required environment variables are not set
+    """
+    neo4j_uri = os.getenv('NEO4J_URI')
+    neo4j_user = os.getenv('NEO4J_USERNAME') 
+    neo4j_password = os.getenv('NEO4J_PASSWORD')
+    
+    if not neo4j_uri:
+        raise ValueError("NEO4J_URI environment variable not set. Check ../.env file")
+    if not neo4j_user:
+        raise ValueError("NEO4J_USERNAME environment variable not set. Check ../.env file") 
+    if not neo4j_password:
+        raise ValueError("NEO4J_PASSWORD environment variable not set. Check ../.env file")
+    
+    print(f"✓ Creating ContractService with Neo4j at {neo4j_uri}")
+    return ContractService(neo4j_uri, neo4j_user, neo4j_password)
+
+
+# For testing and direct usage
+if __name__ == "__main__":
+    import asyncio
+    
+    async def test_service():
+        try:
+            service = create_optimized_service_from_env()
+        except ValueError as e:
+            print(f"❌ Error: {e}")
+            return
+        
+        # Test dynamic question answering
+        test_questions = [
+            "What are the incorporation states for parties in the Master Franchise Agreement?",
+            "What contracts have termination clauses?",
+            "Show me organizations incorporated in Delaware",
+            "What agreements are governed by New York law?"
+        ]
+        
+        for question in test_questions:
+            print(f"\nQ: {question}")
+            answer = await service.answer_complex_aggregation_question(question)
+            print(f"A: {answer}")
+        
+        service.close()
+    
+    asyncio.run(test_service())
