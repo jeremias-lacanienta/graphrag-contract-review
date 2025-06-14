@@ -368,11 +368,9 @@ if user_input:
                 # Special handling for aggregation questions
                 if command == "answer_aggregation_question":
                     display_text = f"""
-                    ────────────────────────────────────────────────────────────
                     Question: {user_input}
-                    ────────────────────────────────────────────────────────────
+                    
                     {formatted_result}
-                    ────────────────────────────────────────────────────────────
                     """
                 else:
                     display_text = formatted_result

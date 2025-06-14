@@ -98,6 +98,8 @@ async def main():
         sys.exit(1)
         
     command = sys.argv[1]
+    # Convert hyphens to underscores for command compatibility
+    command = command.replace('-', '_')
     args = sys.argv[2:]
     result = None
     is_aggregation_question = False
@@ -116,10 +118,22 @@ async def main():
             org = args[0]
             result = await service.get_contracts(org)
         elif command == "get_contracts_with_clause_type" and args:
-            clause_type = ClauseType[args[0]] if hasattr(ClauseType, args[0]) else args[0]
+            clause_type_str = args[0]
+            # Try to find the clause type by value first, then by name
+            clause_type = clause_type_str
+            for ct in ClauseType:
+                if ct.value.lower() == clause_type_str.lower():
+                    clause_type = ct
+                    break
             result = await service.get_contracts_with_clause_type(clause_type)
         elif command == "get_contracts_without_clause" and args:
-            clause_type = ClauseType[args[0]] if hasattr(ClauseType, args[0]) else args[0]
+            clause_type_str = args[0]
+            # Try to find the clause type by value first, then by name
+            clause_type = clause_type_str
+            for ct in ClauseType:
+                if ct.value.lower() == clause_type_str.lower():
+                    clause_type = ct
+                    break
             result = await service.get_contracts_without_clause(clause_type)
         elif command == "get_contract_excerpts" and args:
             contract_id = int(args[0])

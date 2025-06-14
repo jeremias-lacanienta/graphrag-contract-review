@@ -30,10 +30,29 @@ class LLMFormatter:
     def __init__(self, config: Optional[FormattingConfig] = None):
         self.config = config or FormattingConfig()
         try:
-            self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-            self.client_available = True
+            # Check if Azure OpenAI configuration is provided
+            azure_endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
+            azure_api_key = os.getenv('AZURE_OPENAI_API_KEY')
+            azure_api_version = os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-15-preview')
+            azure_deployment = os.getenv('AZURE_OPENAI_DEPLOYMENT') or os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME')
+            
+            if azure_endpoint and azure_api_key:
+                # Use Azure OpenAI
+                from openai import AzureOpenAI
+                self.client = AzureOpenAI(
+                    azure_endpoint=azure_endpoint,
+                    api_key=azure_api_key,
+                    api_version=azure_api_version
+                )
+                # Override model name with Azure deployment name if provided
+                if azure_deployment:
+                    self.config.model = azure_deployment
+                self.client_available = True
+            else:
+                self.client = None
+                self.client_available = False
         except Exception as e:
-            print(f"Warning: OpenAI client initialization failed: {e}")
+            print(f"Warning: LLM client initialization failed: {e}")
             print("Falling back to basic formatting without LLM enhancement")
             self.client = None
             self.client_available = False

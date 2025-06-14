@@ -1070,9 +1070,12 @@ class ContractSearchService(ContractService):
         """Get contracts with specific clause type - maintains backward compatibility"""
         GET_CONTRACT_WITH_CLAUSE_TYPE_QUERY = """
             MATCH (a:Agreement)-[:HAS_CLAUSE]->(cc:ContractClause {type: $clause_type})
-            WITH a
+            WITH a, cc
+            OPTIONAL MATCH (cc)-[:HAS_EXCERPT]->(e:Excerpt)
+            WITH a, cc, collect(e.text) as excerpts
+            WITH a, collect({type: cc.type, excerpts: excerpts}) as clause_data
             MATCH (country:Country)-[i:INCORPORATED_IN]-(p:Organization)-[r:IS_PARTY_TO]-(a:Agreement)
-            RETURN a as agreement, collect(p) as parties, collect(r) as roles, collect(country) as countries, collect(i) as states
+            RETURN a as agreement, collect(p) as parties, collect(r) as roles, collect(country) as countries, collect(i) as states, clause_data
         """
         
         clause_type_value = str(clause_type.value) if hasattr(clause_type, 'value') else str(clause_type)
@@ -1086,14 +1089,23 @@ class ContractSearchService(ContractService):
             role_list = row['roles']
             country_list = row['countries']
             state_list = row['states']
+            clause_data = row['clause_data']
+            
+            # Convert clause_data to clause_dict format
+            clause_dict = {}
+            for clause_info in clause_data:
+                clause_type_name = clause_info['type']
+                clause_excerpts = clause_info['excerpts']
+                clause_dict[clause_type_name] = clause_excerpts
             
             agreement = await self._get_agreement(
-                format="short",
+                format="long",
                 agreement_node=agreement_node,
                 party_list=party_list,
                 role_list=role_list,
                 country_list=country_list,
-                state_list=state_list
+                state_list=state_list,
+                clause_dict=clause_dict
             )
             all_agreements.append(agreement)
         
