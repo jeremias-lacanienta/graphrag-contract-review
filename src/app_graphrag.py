@@ -18,21 +18,63 @@ from AgreementSchema import ClauseType
 from dotenv import load_dotenv
 load_dotenv()
 
-# Import the template renderer
-from template_renderer import format_result as render_template
+# Import the LLM formatter
+from llm_formatter import format_result as llm_format_result
 
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Suppress httpx INFO level logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 OPENAI_KEY = os.getenv('OPENAI_API_KEY')
 NEO4J_URI = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
 NEO4J_USER = os.getenv('NEO4J_USERNAME', 'neo4j')
 NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD')
 
-def format_result(result: Any, command: str = None, args: List[str] = None) -> str:
+def generate_user_question(command: str, args: List[str] = None, user_input: str = "") -> str:
     """
-    Format query results into readable text using the template renderer.
-    This is a wrapper around the template_renderer's format_result function.
+    Generate an appropriate user question based on the command type and arguments.
+    This ensures the LLM formatter has a clear question to answer.
+    
+    Args:
+        command: The command being executed
+        args: Command arguments (for CLI usage)
+        user_input: User input (for Streamlit usage)
+        
+    Returns:
+        A well-formed question for the LLM formatter
+    """
+    # Use user_input if it looks like a proper question (contains question words or is long enough)
+    if user_input and (any(word in user_input.lower() for word in ['what', 'which', 'how', 'when', 'where', 'why', 'who']) or len(user_input.split()) > 3):
+        return user_input
+    
+    # Otherwise, generate a question based on command type
+    param = user_input or (args[0] if args else "")
+    
+    if command == "get_contract":
+        return f"What are the details of contract ID {param}?"
+    elif command == "get_contracts_by_party":
+        return f"What contracts involve the organization '{param}'?"
+    elif command == "get_contracts_with_clause_type":
+        return f"Which contracts contain '{param}' clauses?"
+    elif command == "get_contracts_without_clause":
+        return f"Which contracts do not contain '{param}' clauses?"
+    elif command == "get_contract_excerpts":
+        return f"What are the clause excerpts from contract ID {param}?"
+    elif command == "get_contracts_similar_text":
+        return f"Find contracts related to '{param}'"
+    elif command == "search":
+        return f"Search for contracts related to '{param}'"
+    elif command == "answer_aggregation_question":
+        return param  # For aggregation questions, the parameter IS the question
+    else:
+        return param or "Provide information about the contract data."
+
+async def format_result(result: Any, command: str = None, args: List[str] = None) -> str:
+    """
+    Format query results into readable text using the LLM formatter.
+    Answers are grounded in the user's specific question with precise evidence.
     
     Args:
         result: Query result from ContractService methods
@@ -42,7 +84,11 @@ def format_result(result: Any, command: str = None, args: List[str] = None) -> s
     Returns:
         Formatted string output
     """
-    return render_template(result, command, args)
+    # Generate appropriate user question based on command type
+    user_question = generate_user_question(command, args)
+    
+    # Use the imported format_result function directly (it's already async)
+    return await llm_format_result(result, command, user_question)
 
 async def main():
     service = ContractSearchService(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
@@ -103,10 +149,10 @@ async def main():
                 print("\n" + "─" * 60)
                 print(f"Question: {question}")
                 print("─" * 60)
-                print(format_result(result, command, args))
+                print(await format_result(result, command, args))
                 print("─" * 60)
             else:
-                print(format_result(result, command, args))
+                print(await format_result(result, command, args))
         else:
             print("No results found.")
             

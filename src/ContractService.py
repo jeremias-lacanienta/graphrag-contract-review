@@ -26,6 +26,7 @@ from neo4j_graphrag.retrievers import VectorCypherRetriever, Text2CypherRetrieve
 from neo4j_graphrag.embeddings import OpenAIEmbeddings
 from formatters import my_vector_search_excerpt_record_formatter
 from neo4j_graphrag.llm import OpenAILLM
+from llm_formatter import LLMFormatter
 
 
 class QueryOptimizationLevel(Enum):
@@ -63,6 +64,9 @@ class ContractService:
         self.max_memory_contracts = max_memory_contracts
         self._openai_embedder = OpenAIEmbeddings(model="text-embedding-3-small")
         self._llm = OpenAILLM(model_name="gpt-4o", model_params={"temperature": 0})
+        
+        # Initialize LLM formatter for intelligent output formatting
+        self._formatter = LLMFormatter()
         
         # Query cache for expensive operations
         self._query_cache: Dict[str, QueryResult] = {}
@@ -427,7 +431,7 @@ class ContractService:
             
             # Process results efficiently
             if hasattr(result, 'items') and result.items:
-                return self._format_aggregation_result(result.items, user_question, execution_time)
+                return await self._format_aggregation_result(result.items, user_question, execution_time)
             
             # If Text2Cypher didn't work, fall back to pattern-based approach
             return await self._fallback_query_approach(user_question)
@@ -579,26 +583,17 @@ class ContractService:
                 records = filtered_records
             
             if not records:
-                return "No organizations found with both License and Assignment clauses in the specified incorporation state."
+                return await self._format_empty_response(question)
             
-            answer = f"Organizations meeting the criteria:\n\n"
+            # Convert records to dict format for LLM formatting
+            raw_data = [dict(record) for record in records]
             
-            for record in records:
-                org = record.get('organization', 'Unknown')
-                country = record.get('incorporation_country', 'Unknown')
-                state = record.get('incorporation_state', 'N/A')
-                agreement = record.get('agreement', 'Unknown')
-                clause_types = record.get('clause_types', [])
-                
-                answer += f"• {org}\n"
-                answer += f"  - Incorporated in: {country}"
-                if state and state != 'N/A':
-                    answer += f" ({state})"
-                answer += f"\n"
-                answer += f"  - Agreement: {agreement}\n"
-                answer += f"  - Relevant clause types: {', '.join(clause_types)}\n\n"
+            # Use LLM formatter for professional output
+            formatted_result = await self._formatter.format_contract_results(
+                raw_data, question, "incorporation_clauses"
+            )
             
-            return answer
+            return formatted_result.get("formatted_response", "No results available.")
             
         except Exception as e:
             print(f"Error in incorporation with clauses query: {e}")
@@ -650,31 +645,17 @@ class ContractService:
             records, _, _ = self.driver.execute_query(query)
             
             if not records:
-                return f"No agreements found containing multiple clause types from: {', '.join(mentioned_clauses)}"
-                
-            answer = f"Agreements with multiple relevant clause types:\n\n"
+                return await self._format_empty_response(f"No agreements found containing multiple clause types from: {', '.join(mentioned_clauses)}")
             
-            for record in records:
-                agreement = record.get('agreement', 'Unknown')
-                clause_types = record.get('found_clause_types', [])
-                parties = record.get('parties', [])
-                
-                answer += f"• {agreement}\n"
-                answer += f"  - Clause types: {', '.join(clause_types)}\n"
-                answer += f"  - Parties:\n"
-                
-                for party in parties:
-                    party_name = party.get('name', 'Unknown')
-                    country = party.get('country', 'Unknown')
-                    state = party.get('state', '')
-                    
-                    answer += f"    - {party_name} ({country}"
-                    if state:
-                        answer += f", {state}"
-                    answer += f")\n"
-                answer += "\n"
-                
-            return answer
+            # Convert records to dict format for LLM formatting
+            raw_data = [dict(record) for record in records]
+            
+            # Use LLM formatter for professional output
+            formatted_result = await self._formatter.format_contract_results(
+                raw_data, question, "multiple_clauses"
+            )
+            
+            return formatted_result.get("formatted_response", "No results available.")
             
         except Exception as e:
             print(f"Error in multiple clause query: {e}")
@@ -698,21 +679,17 @@ class ContractService:
         records, _, _ = self.driver.execute_query(query)
         
         if not records:
-            return "No incorporation information found."
+            return await self._format_empty_response("No incorporation information found.")
         
-        answer = "Incorporation information for organizations:\n\n"
-        for record in records:
-            org = record.get('organization', 'Unknown')
-            country = record.get('incorporation_country', 'Unknown')
-            state = record.get('incorporation_state', 'N/A')
-            agreement_count = record.get('agreement_count', 0)
-            
-            answer += f"• {org}: {country}"
-            if state and state != 'N/A':
-                answer += f" ({state})"
-            answer += f" - {agreement_count} agreements\n"
+        # Convert records to dict format for LLM formatting
+        raw_data = [dict(record) for record in records]
         
-        return answer
+        # Use LLM formatter for professional output
+        formatted_result = await self._formatter.format_contract_results(
+            raw_data, question, "incorporation"
+        )
+        
+        return formatted_result.get("formatted_response", "No results available.")
     
     async def _handle_clause_questions(self, question: str) -> str:
         """Handle questions about clauses and clause types"""
@@ -750,17 +727,17 @@ class ContractService:
         records, _, _ = self.driver.execute_query(query)
         
         if not records:
-            return "No clause information found matching your query."
+            return await self._format_empty_response("No clause information found matching your query.")
         
-        answer = "Clause type analysis:\n\n"
-        for record in records:
-            clause_type = record.get('clause_type', 'Unknown')
-            clause_count = record.get('clause_count', 0)
-            agreement_count = record.get('agreement_count', 0)
-            
-            answer += f"• {clause_type}: {clause_count} clauses across {agreement_count} agreements\n"
+        # Convert records to dict format for LLM formatting
+        raw_data = [dict(record) for record in records]
         
-        return answer
+        # Use LLM formatter for professional output
+        formatted_result = await self._formatter.format_contract_results(
+            raw_data, question, "clause_analysis"
+        )
+        
+        return formatted_result.get("formatted_response", "No results available.")
     
     async def _handle_organization_questions(self, question: str) -> str:
         """Handle questions about organizations and parties"""
@@ -788,24 +765,17 @@ class ContractService:
         records, _, _ = self.driver.execute_query(query)
         
         if not records:
-            return "No organization information found."
+            return await self._format_empty_response("No organization information found.")
         
-        answer = "Organization analysis:\n\n"
-        for record in records:
-            org = record.get('organization', 'Unknown')
-            roles = record.get('roles', [])
-            agreement_count = record.get('agreement_count', 0)
-            inc_country = record.get('inc_country', 'Unknown')
-            inc_state = record.get('inc_state', '')
-            
-            answer += f"• {org} ({inc_country}"
-            if inc_state:
-                answer += f", {inc_state}"
-            answer += f")\n"
-            answer += f"  - Roles: {', '.join(roles) if roles else 'None'}\n"
-            answer += f"  - {agreement_count} agreements\n\n"
+        # Convert records to dict format for LLM formatting
+        raw_data = [dict(record) for record in records]
         
-        return answer
+        # Use LLM formatter for professional output
+        formatted_result = await self._formatter.format_contract_results(
+            raw_data, question, "organization_analysis"
+        )
+        
+        return formatted_result.get("formatted_response", "No results available.")
 
     async def _handle_agreement_questions(self, question: str) -> str:
         """Handle questions about agreements and contracts"""
@@ -831,28 +801,17 @@ class ContractService:
         records, _, _ = self.driver.execute_query(query)
         
         if not records:
-            return "No agreement information found."
+            return await self._format_empty_response("No agreement information found.")
         
-        answer = "Agreement analysis:\n\n"
-        for record in records:
-            name = record.get('agreement_name', 'Unknown')
-            contract_id = record.get('contract_id', 'N/A')
-            agreement_type = record.get('agreement_type', 'Unknown')
-            parties = record.get('parties', [])
-            governing_country = record.get('governing_country', 'Unknown')
-            governing_state = record.get('governing_state', '')
-            clause_complexity = record.get('clause_complexity', 0)
-            
-            answer += f"• {name} (ID: {contract_id})\n"
-            answer += f"  - Type: {agreement_type}\n"
-            answer += f"  - Governing: {governing_country}"
-            if governing_state:
-                answer += f" ({governing_state})"
-            answer += f"\n"
-            answer += f"  - Parties: {len(parties)} parties\n"
-            answer += f"  - Clause complexity: {clause_complexity} unique clause types\n\n"
+        # Convert records to dict format for LLM formatting
+        raw_data = [dict(record) for record in records]
         
-        return answer
+        # Use LLM formatter for professional output
+        formatted_result = await self._formatter.format_contract_results(
+            raw_data, question, "agreement_analysis"
+        )
+        
+        return formatted_result.get("formatted_response", "No results available.")
 
     async def _handle_jurisdiction_questions(self, question: str) -> str:
         """Handle questions about jurisdictions and governing law"""
@@ -882,31 +841,17 @@ class ContractService:
         records, _, _ = self.driver.execute_query(query)
         
         if not records:
-            return "No jurisdiction information found."
+            return await self._format_empty_response("No jurisdiction information found.")
         
-        answer = "Jurisdiction analysis:\n\n"
-        for record in records:
-            gov_country = record.get('governing_country', 'Unknown')
-            gov_state = record.get('governing_state', '')
-            agreement_count = record.get('agreement_count', 0)
-            parties = record.get('parties', [])
-            
-            answer += f"• {gov_country}"
-            if gov_state:
-                answer += f" ({gov_state})"
-            answer += f": {agreement_count} agreements\n"
-            
-            # Show cross-jurisdictional patterns
-            unique_inc_countries = set()
-            for party in parties:
-                if party.get('inc_country'):
-                    unique_inc_countries.add(party['inc_country'])
-            
-            if unique_inc_countries:
-                answer += f"  - Party incorporation countries: {', '.join(unique_inc_countries)}\n"
-            answer += "\n"
+        # Convert records to dict format for LLM formatting
+        raw_data = [dict(record) for record in records]
         
-        return answer
+        # Use LLM formatter for professional output
+        formatted_result = await self._formatter.format_contract_results(
+            raw_data, question, "jurisdiction_analysis"
+        )
+        
+        return formatted_result.get("formatted_response", "No results available.")
 
     async def _handle_excerpt_questions(self, question: str) -> str:
         """Handle questions about contract excerpts and text content"""
@@ -926,46 +871,31 @@ class ContractService:
         records, _, _ = self.driver.execute_query(query)
         
         if not records:
-            return "No excerpt information found."
+            return await self._format_empty_response("No excerpt information found.")
         
-        answer = "Contract excerpt analysis:\n\n"
-        for record in records:
-            agreement_name = record.get('agreement_name', 'Unknown')
-            contract_id = record.get('contract_id', 'N/A')
-            clause_type = record.get('clause_type', 'Unknown')
-            excerpt_text = record.get('excerpt_text', 'No text available')
-            parties = record.get('parties', [])
-            
-            answer += f"• {agreement_name} (ID: {contract_id})\n"
-            answer += f"  - Clause: {clause_type}\n"
-            answer += f"  - Parties: {', '.join(parties)}\n"
-            answer += f"  - Excerpt: {excerpt_text[:200]}{'...' if len(excerpt_text) > 200 else ''}\n\n"
+        # Convert records to dict format for LLM formatting
+        raw_data = [dict(record) for record in records]
         
-        return answer
+        # Use LLM formatter for professional output
+        formatted_result = await self._formatter.format_contract_results(
+            raw_data, question, "excerpt_analysis"
+        )
+        
+        return formatted_result.get("formatted_response", "No results available.")
 
     async def _handle_generic_questions(self, question: str) -> str:
         """Handle generic questions by providing database overview"""
         stats = self.get_contract_statistics()
         
-        answer = "Database Overview:\n\n"
-        answer += f"• Total Agreements: {stats.get('total_contracts', 'Unknown')}\n"
-        answer += f"• Organizations: {stats.get('total_organizations', 'Unknown')}\n" 
-        answer += f"• Total Clauses: {stats.get('total_clauses', 'Unknown')}\n"
-        answer += f"• Unique Clause Types: {stats.get('unique_clause_types', 'Unknown')}\n"
-        answer += f"• Countries: {stats.get('total_countries', 'Unknown')}\n\n"
+        # Convert stats to structured format for LLM formatting
+        raw_data = [stats]
         
-        contract_types = stats.get('contract_types', [])
-        if contract_types:
-            answer += f"Contract Types: {', '.join(contract_types)}\n\n"
+        # Use LLM formatter for professional output
+        formatted_result = await self._formatter.format_contract_results(
+            raw_data, question, "database_overview"
+        )
         
-        answer += "For more specific information, try asking about:\n"
-        answer += "• Incorporation states of organizations\n"
-        answer += "• Specific clause types (license, liability, termination, etc.)\n"
-        answer += "• Agreement details and parties\n"
-        answer += "• Governing jurisdictions\n"
-        answer += "• Contract content and excerpts\n"
-        
-        return answer
+        return formatted_result.get("formatted_response", "Database information unavailable.")
 
     # ==================== PERFORMANCE MONITORING ====================
     
@@ -993,54 +923,38 @@ class ContractService:
     
     # ==================== RESULT FORMATTING ====================
     
-    def _format_aggregation_result(self, items: List[Any], question: str, execution_time: float = 0) -> str:
-        """Format aggregation results with smart truncation for large datasets"""
+    async def _format_aggregation_result(self, items: List[Any], question: str, execution_time: float = 0) -> str:
+        """Format aggregation results using LLM for better presentation"""
         if not items:
-            return "No results found."
+            return await self._format_empty_response("No results found.")
         
-        # For very large result sets, provide summary statistics
-        if len(items) > 100:
-            return self._format_large_result_summary(items, question, execution_time)
+        # Convert items to dict format for LLM processing
+        raw_data = []
+        for item in items[:50]:  # Limit to prevent token overflow
+            if hasattr(item, '_properties'):
+                raw_data.append(dict(item._properties))
+            elif isinstance(item, dict):
+                raw_data.append(item)
+            else:
+                # Convert record objects to dict representation
+                try:
+                    raw_data.append(dict(item))
+                except:
+                    raw_data.append({"result": str(item)})
         
-        # Standard formatting for manageable result sets
-        answer = f"Query results (showing {len(items)} items"
-        if execution_time > 0:
-            answer += f", execution time: {execution_time:.3f}s"
-        answer += "):\n\n"
+        # Add metadata about the query
+        metadata = {
+            "total_results": len(items),
+            "execution_time": execution_time,
+            "is_large_dataset": len(items) > 100
+        }
+        raw_data.append({"query_metadata": metadata})
         
-        for i, record in enumerate(items[:50]):  # Limit display to 50 items
-            record_str = str(record).replace("<Record ", "").replace(">", "").strip()
-            answer += f"  {i+1}. {record_str}\n"
+        # Use LLM formatter for professional output
+        formatted_result = await self._formatter.format_aggregation_results(raw_data, question)
         
-        if len(items) > 50:
-            answer += f"\n... and {len(items) - 50} more results (truncated for readability)"
-        
-        return answer
+        return formatted_result.get("formatted_response", "No results available.")
     
-    def _format_large_result_summary(self, items: List[Any], question: str, execution_time: float = 0) -> str:
-        """Provide summary statistics for very large result sets"""
-        total_count = len(items)
-        
-        # Sample first few results
-        sample_size = min(10, total_count)
-        sample_results = items[:sample_size]
-        
-        summary = f"Large result set found ({total_count} total results"
-        if execution_time > 0:
-            summary += f", execution time: {execution_time:.3f}s"
-        summary += ").\n\n"
-        
-        summary += f"Sample of first {sample_size} results:\n"
-        
-        for i, record in enumerate(sample_results):
-            record_str = str(record).replace("<Record ", "").replace(">", "").strip()
-            summary += f"  {i+1}. {record_str}\n"
-        
-        summary += f"\n... and {total_count - sample_size} more results."
-        summary += f"\n\nFor the complete dataset, consider using more specific filters or aggregation queries."
-        
-        return summary
-
     # ==================== UTILITY METHODS ====================
     
     def health_check(self) -> Dict[str, Any]:
@@ -1083,8 +997,6 @@ class ContractSearchService(ContractService):
     def __init__(self, uri: str, user: str, pwd: str):
         """Initialize with same signature as original ContractSearchService"""
         super().__init__(uri, user, pwd)
-        print("✓ Using ContractService for enhanced performance")
-        print("  Run 'python initialize_optimizations.py' if not already done for best results")
 
     # ==================== BACKWARD COMPATIBILITY METHODS ====================
     
@@ -1401,58 +1313,9 @@ class ContractSearchService(ContractService):
         
         return summary
 
-
-# ==================== CONVENIENCE FUNCTIONS ====================
-
-def create_optimized_service_from_env() -> ContractService:
-    """
-    Create ContractService using environment variables from ../.env
+    # ==================== HELPER METHODS ====================
     
-    Returns:
-        ContractService instance
-        
-    Raises:
-        ValueError: If required environment variables are not set
-    """
-    neo4j_uri = os.getenv('NEO4J_URI')
-    neo4j_user = os.getenv('NEO4J_USERNAME') 
-    neo4j_password = os.getenv('NEO4J_PASSWORD')
-    
-    if not neo4j_uri:
-        raise ValueError("NEO4J_URI environment variable not set. Check ../.env file")
-    if not neo4j_user:
-        raise ValueError("NEO4J_USERNAME environment variable not set. Check ../.env file") 
-    if not neo4j_password:
-        raise ValueError("NEO4J_PASSWORD environment variable not set. Check ../.env file")
-    
-    print(f"✓ Creating ContractService with Neo4j at {neo4j_uri}")
-    return ContractService(neo4j_uri, neo4j_user, neo4j_password)
-
-
-# For testing and direct usage
-if __name__ == "__main__":
-    import asyncio
-    
-    async def test_service():
-        try:
-            service = create_optimized_service_from_env()
-        except ValueError as e:
-            print(f"❌ Error: {e}")
-            return
-        
-        # Test dynamic question answering
-        test_questions = [
-            "What are the incorporation states for parties in the Master Franchise Agreement?",
-            "What contracts have termination clauses?",
-            "Show me organizations incorporated in Delaware",
-            "What agreements are governed by New York law?"
-        ]
-        
-        for question in test_questions:
-            print(f"\nQ: {question}")
-            answer = await service.answer_complex_aggregation_question(question)
-            print(f"A: {answer}")
-        
-        service.close()
-    
-    asyncio.run(test_service())
+    async def _format_empty_response(self, message: str) -> str:
+        """Helper method to format empty responses using LLM"""
+        empty_result = await self._formatter._format_empty_response(message)
+        return empty_result.get("formatted_response", message)

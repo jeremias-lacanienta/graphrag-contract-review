@@ -97,13 +97,13 @@ The web interface provides:
 
 ### Enhanced Output Formatting
 
-The GraphRAG-only implementation now uses Jinja2 templates for better display formatting:
+The GraphRAG implementation now uses intelligent LLM-based formatting for better display:
 
-- Color-coded terminal output
-- Structured display of contract information
+- Natural language responses directly answering user questions
+- Structured presentation of contract information with precise grounding
 - Deduplication of parties, clauses, and excerpts
-- Special formatting for different types of queries
-- Clear presentation of aggregation question results
+- Context-aware formatting for different types of queries
+- Clear presentation of aggregation question results with evidence
 
 ### Environment Cleanup
 

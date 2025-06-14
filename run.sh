@@ -44,6 +44,11 @@ else
     exit 1
 fi
 
+# Run database optimizations first
+echo -e "${YELLOW}Ensuring database optimizations are in place...${NC}"
+python initialize_optimizations.py --quiet
+echo ""
+
 # Run each command in sequence
 # 1. Get a specific contract by ID
 run_command "Getting Contract by ID" "get_contract" "3"

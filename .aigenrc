@@ -11,6 +11,5 @@
     "behavior_rules": "AGENT_BEHAVIOR_RULES.md"
   },
   "setup": "setup.sh",
-  "templates": "templates/",
   "sample_data": "data/input/"
 }

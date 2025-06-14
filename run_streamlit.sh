@@ -19,6 +19,11 @@ cd "$(dirname "$0")"
 if [ -d ".venv_graphrag" ]; then
     source .venv_graphrag/bin/activate
     
+    # Run database optimizations first
+    echo -e "${YELLOW}Ensuring database optimizations are in place...${NC}"
+    python initialize_optimizations.py --quiet
+    echo ""
+    
     echo -e "${GREEN}Starting Streamlit server...${NC}"
     echo -e "${SEPARATOR}"
     echo -e "${BLUE}GraphRAG Contract Review Streamlit Interface${NC}"

@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import asyncio
+import logging
 import streamlit as st
 from typing import Any, Dict, List, Union
 import subprocess
@@ -17,10 +18,13 @@ from dotenv import load_dotenv
 # Import services
 from ContractService import ContractSearchService
 from AgreementSchema import ClauseType
-from template_renderer import format_result as render_template
+from llm_formatter import format_result as llm_format_result
 
 # Load environment variables
 load_dotenv()
+
+# Suppress httpx INFO level logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Configure Streamlit page
 st.set_page_config(
@@ -150,6 +154,45 @@ def run_async(coroutine):
     asyncio.set_event_loop(loop)
     return loop.run_until_complete(coroutine)
 
+def generate_user_question(command: str, args: List[str] = None, user_input: str = "") -> str:
+    """
+    Generate an appropriate user question based on the command type and arguments.
+    This ensures the LLM formatter has a clear question to answer.
+    
+    Args:
+        command: The command being executed
+        args: Command arguments (for CLI usage)
+        user_input: User input (for Streamlit usage)
+        
+    Returns:
+        A well-formed question for the LLM formatter
+    """
+    # Use user_input if it looks like a proper question (contains question words or is long enough)
+    if user_input and (any(word in user_input.lower() for word in ['what', 'which', 'how', 'when', 'where', 'why', 'who']) or len(user_input.split()) > 3):
+        return user_input
+    
+    # Otherwise, generate a question based on command type
+    param = user_input or (args[0] if args else "")
+    
+    if command == "get_contract":
+        return f"What are the details of contract ID {param}?"
+    elif command == "get_contracts_by_party":
+        return f"What contracts involve the organization '{param}'?"
+    elif command == "get_contracts_with_clause_type":
+        return f"Which contracts contain '{param}' clauses?"
+    elif command == "get_contracts_without_clause":
+        return f"Which contracts do not contain '{param}' clauses?"
+    elif command == "get_contract_excerpts":
+        return f"What are the clause excerpts from contract ID {param}?"
+    elif command == "get_contracts_similar_text":
+        return f"Find contracts related to '{param}'"
+    elif command == "search":
+        return f"Search for contracts related to '{param}'"
+    elif command == "answer_aggregation_question":
+        return param  # For aggregation questions, the parameter IS the question
+    else:
+        return param or "Provide information about the contract data."
+
 # Main header
 st.markdown("<h1 class='main-header'>GraphRAG Contract Review System</h1>", unsafe_allow_html=True)
 st.markdown("<p>Interactive interface for exploring and analyzing contracts using graph-based retrieval</p>", unsafe_allow_html=True)
@@ -258,9 +301,11 @@ st.sidebar.code(selected_cmd['example'], language=None)
 # Chat-like input interface
 for message in st.session_state.messages:
     if message["role"] == "user":
-        st.chat_message("user").write(message["content"])
+        with st.chat_message("user"):
+            st.write(message["content"])
     else:
-        st.chat_message("assistant").write(message["content"])
+        with st.chat_message("assistant"):
+            st.markdown(message["content"], unsafe_allow_html=False)
 
 # Input field for command arguments (without default value as it's not supported)
 user_input = st.chat_input("Enter your command input here...")
@@ -268,7 +313,8 @@ user_input = st.chat_input("Enter your command input here...")
 if user_input:
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": user_input})
-    st.chat_message("user").write(user_input)
+    with st.chat_message("user"):
+        st.write(user_input)
     
     # Initialize the service
     service = run_async(initialize_service())
@@ -314,7 +360,10 @@ if user_input:
             
             # Format the result
             if result is not None:
-                formatted_result = render_template(result, command, [user_input])
+                # Generate appropriate user question for LLM formatter
+                user_question = generate_user_question(command, user_input=user_input)
+                # Use async LLM formatter with precise grounding to user question
+                formatted_result = run_async(llm_format_result(result, command, user_question))
                 
                 # Special handling for aggregation questions
                 if command == "answer_aggregation_question":
@@ -330,17 +379,25 @@ if user_input:
                 
                 # Add assistant message to chat history
                 st.session_state.messages.append({"role": "assistant", "content": display_text})
-                st.chat_message("assistant").write(display_text)
+                
+                # Display formatted markdown result
+                with st.chat_message("assistant"):
+                    st.markdown(display_text, unsafe_allow_html=False)
             else:
                 # Handle no results
-                st.session_state.messages.append({"role": "assistant", "content": "No results found."})
-                st.chat_message("assistant").write("No results found.")
+                no_results_msg = "No results found."
+                st.session_state.messages.append({"role": "assistant", "content": no_results_msg})
+                with st.chat_message("assistant"):
+                    st.markdown(no_results_msg)
                 
         except Exception as e:
             error_message = f"Error: {str(e)}"
             st.session_state.messages.append({"role": "assistant", "content": error_message})
-            st.chat_message("assistant").write(error_message)
+            with st.chat_message("assistant"):
+                st.markdown(error_message)
             st.error(error_message)
+
+# Helper function to generate user questions for LLM formatter
 
 # Display info about the system
 with st.sidebar.expander("About GraphRAG Contract Review"):

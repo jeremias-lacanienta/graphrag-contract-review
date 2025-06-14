@@ -15,12 +15,7 @@
 ## Neo4j and GraphRAG
 - Ask about schema changes
 - Discuss query validation
-- Verify approach for template modifications
-
-## Neo4j and GraphRAG
-- Ask about schema changes
-- Discuss query validation
-- Verify approach for template modifications
+- Verify approach for LLM formatting modifications
 
 ## Don't Do
 - Do not modify any files outside of .tmp folder unless I instructed it
