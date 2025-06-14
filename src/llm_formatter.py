@@ -119,8 +119,8 @@ class LLMFormatter:
                                     item_lines.append(f"       Excerpt {j}: {excerpt}")
                             else:
                                 item_lines.append(f"    {i}. {clause}")
-                    elif len(value) <= 5 or query_type == "excerpts":
-                        # For excerpts, show all items; for others, show all if <= 5
+                    elif len(value) <= 5 or query_type in ["excerpts", "contract", "contract_detail"]:
+                        # For excerpts, contracts, show all items; for others, show all if <= 5
                         item_lines.append(f"  • {self._format_key(key)}: {', '.join(map(str, value))}")
                     else:
                         preview = ', '.join(map(str, value[:3]))
@@ -230,8 +230,8 @@ class LLMFormatter:
         prompt = self._create_formatting_prompt(formatted_data, user_question, query_type, summary_stats)
         
         try:
-            # Use more tokens for excerpt queries to accommodate all excerpts
-            max_tokens = 4000 if query_type == "excerpts" else self.config.max_tokens
+            # Use more tokens for excerpt and contract detail queries to accommodate all data
+            max_tokens = 4000 if query_type in ["excerpts", "contract_detail", "contract"] else self.config.max_tokens
             
             response = self.client.chat.completions.create(
                 model=self.config.model,
@@ -262,14 +262,21 @@ Summary Statistics:
 - Jurisdictions: {summary_stats['jurisdiction_count']}
 """
         
-        # Add specific instructions for excerpt queries
-        excerpt_instruction = ""
+        # Add specific instructions for excerpt and contract detail queries
+        special_instruction = ""
         if query_type == "excerpts":
-            excerpt_instruction = """
+            special_instruction = """
 🚨 MANDATORY REQUIREMENT FOR EXCERPTS 🚨
 You MUST display ALL clause excerpts from the provided data. The data shows 10 clauses - you must display all 10 numbered clauses with their excerpts. Count the clauses in the data and ensure your response contains exactly that many clauses. Do not omit any clauses. Do not use "..." to indicate more items. Do not provide samples or examples. Show EVERY SINGLE clause type and its complete excerpt text. If you show fewer clauses than are in the data, you have failed the task.
 
 VERIFICATION REQUIREMENT: Before you finish, count how many clauses you displayed and make sure it matches the number in the data (10 clauses).
+"""
+        elif query_type in ["contract_detail", "contract"]:
+            special_instruction = """
+🚨 MANDATORY REQUIREMENT FOR CONTRACT DETAILS 🚨
+You MUST display ALL clauses from the contract data. The data shows multiple clauses - you must list every single clause type without omitting any. Do not use "..." to indicate more items. Do not summarize or truncate the clause list. Show EVERY clause type that appears in the data. Count the clauses and display exactly that many.
+
+VERIFICATION REQUIREMENT: Before you finish, count how many clauses you displayed and make sure it matches the number in the data.
 """
         
         return f"""
@@ -280,7 +287,7 @@ Query Type: {query_type}
 
 Raw Data to Format:
 {formatted_data}
-{excerpt_instruction}
+{special_instruction}
 CRITICAL: You must provide a PRECISE, GROUNDED answer that directly addresses the user's specific question. Follow these requirements:
 
 1. **Answer the exact question asked** - Don't provide general information, focus only on what was specifically requested
@@ -310,6 +317,7 @@ Do NOT provide generic contract analysis - answer ONLY what was asked with preci
             "aggregation": " Focus on precise statistical answers and patterns that directly address the question.",
             "similarity": " Focus on relevance and explain exactly why results match the query with specific evidence.",
             "contract_list": " Focus on specific organizational details that answer the question.",
+            "contract_detail": " CRITICAL REQUIREMENT: You must display ALL clauses completely. Never use '...' or '(X total)' for clauses. List every single clause name individually. This is a mandatory requirement.",
             "excerpts": " CRITICAL: Display ALL clause excerpts from the data. Do not omit any clauses or excerpts. Show every single clause type and its excerpt text without summarizing or truncating.",
             "general": " Provide only the specific information requested with supporting evidence."
         }
@@ -382,6 +390,11 @@ async def format_result(data: Any, query_type: str, user_question: str = "", **k
     Main formatting function that provides grounded, precise answers to user questions
     """
     formatter = LLMFormatter()
+    
+    # Handle pre-formatted aggregation results
+    if query_type == "answer_aggregation_question" and isinstance(data, str) and len(data) > 50:
+        # This is already a formatted result from the aggregation service, return as-is
+        return data
     
     # Convert data to list of dicts if needed
     if not isinstance(data, list):
